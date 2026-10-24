@@ -405,3 +405,39 @@ img.logo { display: inline-block; object-fit: contain; flex: none; vertical-alig
 .hs-zeit i { display: block; height: 100%; background: var(--akzent); transform-origin: left; transform: scaleX(1); }
 .hinweis-box.weg { opacity: 0; transform: translateY(8px); transition: opacity .2s, transform .2s; }
 @keyframes hinweis-rein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Filterkasten: deutlich vom Hintergrund und von den Termin-Karten abgesetzt */
+.filter {
+  background: color-mix(in srgb, var(--akzent) 6%, var(--fl));
+  border: 1.5px solid color-mix(in srgb, var(--akzent) 35%, var(--rand));
+}
+.filter .chip, .filter input:not([type="checkbox"]), .filter .abo-url { background: var(--fl); }
+.filter .chip[aria-pressed="true"] { background: color-mix(in srgb, var(--akzent) 14%, var(--fl)); border-color: color-mix(in srgb, var(--akzent) 55%, var(--rand)); }
+.filter-kopf { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.filter-kopf h2 { font-size: 16px; margin: 0; font-weight: 700; }
+.filter-zahl { font-size: 12px; font-weight: 650; color: var(--akzent-text); background: var(--akzent); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+.filter-reset { margin-left: auto; background: none; border: 0; padding: 0; color: var(--akzent); cursor: pointer; font-size: 13px; }
+.filter-aktionen { display: none; }
+@media (max-width: 900px) {
+  .filter-kopf { display: none; }
+  .filter summary {
+    display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 12px 16px; font-size: 15px;
+  }
+  .filter summary .sum-titel { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+  .filter summary .sum-titel svg { width: 18px; height: 18px; color: var(--akzent); }
+  .filter summary .filter-zahl { margin-left: 2px; }
+  .filter summary .sum-pfeil { width: 20px; height: 20px; margin-left: auto; color: var(--text2); transition: transform .2s; }
+  .filter[open] summary .sum-pfeil { transform: rotate(180deg); }
+  .filter[open] summary { border-bottom: 1px solid color-mix(in srgb, var(--akzent) 25%, var(--rand)); margin-bottom: 14px; }
+  .filter-aktionen {
+    display: grid; grid-template-columns: auto 1fr; gap: 8px; position: sticky; bottom: 0; z-index: 2;
+    margin: 16px -16px -16px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: color-mix(in srgb, var(--akzent) 6%, var(--fl));
+    border-top: 1px solid color-mix(in srgb, var(--akzent) 25%, var(--rand));
+    border-radius: 0 0 11px 11px;
+  }
+  .filter-aktionen .knopf { padding: 11px 14px; font-size: 15px; }
+}
+@media (min-width: 901px) {
+  .filter { max-height: calc(100vh - 32px); overflow-y: auto; overscroll-behavior: contain; }
+}

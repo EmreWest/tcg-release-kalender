@@ -39,8 +39,20 @@
 
   <div class="layout">
     <details class="flaeche filter" id="filter-box" open>
-      <summary>Filter und Abo <span class="anz" id="filter-anz"></span></summary>
+      <summary>
+        <span class="sum-titel">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 5h18M6 12h12M10 19h4"/></svg>
+          Filter und Abo
+        </span>
+        <span class="filter-zahl" data-filter-zahl hidden></span>
+        <svg class="sum-pfeil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </summary>
       <div class="filter-inhalt">
+        <div class="filter-kopf">
+          <h2>Filter</h2>
+          <span class="filter-zahl" data-filter-zahl hidden></span>
+          <button type="button" class="filter-reset" data-zuruecksetzen hidden>Zurücksetzen</button>
+        </div>
         <div class="gruppe suche">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
           <input type="search" id="f-suche" placeholder="Set oder Code suchen" aria-label="Set oder Code suchen">
@@ -80,6 +92,11 @@
             <a class="knopf" id="abo-google" target="_blank" rel="noopener">Google Kalender</a>
           </div>
           <p class="hinweis">Das Abo enthält genau die Filter von oben. Neue Sets und Terminänderungen erscheinen automatisch in deiner Kalender-App.</p>
+        </div>
+
+        <div class="filter-aktionen">
+          <button type="button" class="knopf" data-zuruecksetzen>Zurücksetzen</button>
+          <button type="button" class="knopf primaer" id="filter-fertig">Termine anzeigen</button>
         </div>
       </div>
     </details>

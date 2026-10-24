@@ -220,14 +220,44 @@ function einstellungenLaden() {
 }
 
 // --- Abo -------------------------------------------------------------------------
+// Zahl der Filter, die vom Standard abweichen
+function aktiveFilter() {
+  const gleich = (set, liste) => set.size === liste.length && liste.every((x) => set.has(x));
+  let n = 0;
+  if (!gleich(zustand.spiele, alleIds("spiele"))) n++;
+  if (!gleich(zustand.status, STANDARD_STATUS)) n++;
+  if (!gleich(zustand.typ, alleIds("typ"))) n++;
+  if (zustand.suche) n++;
+  if (zustand.prerelease) n++;
+  if (!zustand.ungenau) n++;
+  if (zustand.vergangen) n++;
+  return n;
+}
+function trefferAnzahl() {
+  const grenze = iso(plusTage(heute(), -14));
+  return DATEN.filter((r) => passt(r) && (zustand.vergangen || r.genauigkeit !== "tag" || r.datum >= grenze)).length;
+}
+function filterZuruecksetzen() {
+  for (const g of ["spiele", "typ"]) zustand[g] = new Set(alleIds(g));
+  zustand.status = new Set(STANDARD_STATUS);
+  zustand.suche = ""; zustand.ungenau = true; zustand.prerelease = false; zustand.vergangen = false;
+  filterBauen(); aktualisieren();
+}
+
 function aboAktualisieren() {
   const url = `${location.origin}/kalender.ics${qs(filterParams(true))}`;
   $("#abo-url").value = url;
   const webcal = url.replace(/^https?:/, "webcal:");
   $("#abo-webcal").href = webcal;
   $("#abo-google").href = "https://calendar.google.com/calendar/r?cid=" + encodeURIComponent(webcal);
-  const n = zustand.spiele.size, alle = META.spiele.length;
-  $("#filter-anz").textContent = n === alle ? "alle Spiele" : `${n} von ${alle} Spielen`;
+  const aktiv = aktiveFilter();
+  document.querySelectorAll("[data-filter-zahl]").forEach((el) => {
+    el.hidden = !aktiv;
+    el.textContent = aktiv === 1 ? "1 Filter aktiv" : `${aktiv} Filter aktiv`;
+  });
+  document.querySelectorAll(".filter-reset[data-zuruecksetzen]").forEach((el) => { el.hidden = !aktiv; });
+  const n = trefferAnzahl();
+  $("#filter-fertig").textContent = n === 0 ? "Keine Treffer – schließen" : n === 1 ? "1 Termin anzeigen" : `${n} Termine anzeigen`;
 }
 
 // --- Ansichten -----------------------------------------------------------------------
@@ -513,10 +543,11 @@ function ereignisseBinden() {
     if (r && !r.closest("dialog")) { e.stopPropagation(); detailZeigen(r.dataset.r); return; }
     const nav = e.target.closest("[data-nav]");
     if (nav) { navigieren(Number(nav.dataset.nav)); return; }
-    if (e.target.closest("#filter-zurueck")) {
-      for (const g of ["spiele", "typ"]) zustand[g] = new Set(alleIds(g));
-      zustand.status = new Set(STANDARD_STATUS); zustand.suche = ""; zustand.ungenau = true;
-      filterBauen(); aktualisieren(); return;
+    if (e.target.closest("#filter-zurueck, [data-zuruecksetzen]")) { filterZuruecksetzen(); return; }
+    if (e.target.closest("#filter-fertig")) {
+      $("#filter-box").open = false;
+      $("#leiste").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      return;
     }
     const zelle = e.target.closest(".zelle");
     if (zelle) { zustand.tag = zelle.dataset.tag; monatRendern(); }
