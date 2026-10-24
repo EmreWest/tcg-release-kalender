@@ -1,0 +1,372 @@
+{
+ "spiele": [
+  {
+   "id": "pokemon",
+   "name": "Pokémon",
+   "farbe": "#f2b705"
+  },
+  {
+   "id": "onepiece",
+   "name": "One Piece",
+   "farbe": "#e53935"
+  },
+  {
+   "id": "magic",
+   "name": "Magic: The Gathering",
+   "farbe": "#a0612b"
+  },
+  {
+   "id": "lorcana",
+   "name": "Disney Lorcana",
+   "farbe": "#7e57c2"
+  },
+  {
+   "id": "yugioh",
+   "name": "Yu-Gi-Oh!",
+   "farbe": "#9c2a4e"
+  },
+  {
+   "id": "riftbound",
+   "name": "Riftbound",
+   "farbe": "#1aa3b8"
+  },
+  {
+   "id": "swu",
+   "name": "Star Wars: Unlimited",
+   "farbe": "#3d6fe0"
+  },
+  {
+   "id": "gundam",
+   "name": "Gundam Card Game",
+   "farbe": "#2e9e5b"
+  },
+  {
+   "id": "digimon",
+   "name": "Digimon",
+   "farbe": "#f07c1e"
+  },
+  {
+   "id": "dbfw",
+   "name": "Dragon Ball Fusion World",
+   "farbe": "#f06292"
+  }
+ ],
+ "releases": [
+  {
+   "spiel": "pokemon",
+   "name": "30th Celebration",
+   "typ": "spezialset",
+   "datum": "2026-09-16",
+   "status": "bestaetigt",
+   "notiz": "Erstes weltweit zeitgleiches Pokémon-Set.",
+   "quelle": "https://cardprice.com/guides/upcoming-sets"
+  },
+  {
+   "spiel": "pokemon",
+   "name": "Delta Reign",
+   "code": "ME06",
+   "typ": "hauptset",
+   "datum": "2026-11-06",
+   "prerelease": "2026-10-24",
+   "status": "bestaetigt",
+   "notiz": "Mega Rayquaza ex. Englische Fassung von „Storm Emeralda“ (JP).",
+   "quelle": "https://www.cardrake.com/guides/upcoming-sets"
+  },
+  {
+   "spiel": "pokemon",
+   "name": "30th Celebration Premium (Welle 4)",
+   "typ": "sonstiges",
+   "datum": "2026-11-06",
+   "status": "bestaetigt",
+   "notiz": "Ultra-Premium-Kollektionen Day & Night u. a.",
+   "quelle": "https://dashboard.houseofcarts.io/resources/pokemon-tcg-release-calendar-2026"
+  },
+  {
+   "spiel": "pokemon",
+   "name": "30th Celebration ex Tins & Binder Collection (Welle 5)",
+   "typ": "sonstiges",
+   "datum": "2026-12-04",
+   "status": "angekuendigt",
+   "notiz": "Laut Händlerkalender, ursprünglich für Oktober geplant. EU-Termin prüfen.",
+   "quelle": "https://pokennoisseur.ca/tools/release-calendar"
+  },
+  {
+   "spiel": "pokemon",
+   "name": "Nächstes Hauptset (EN-Fassung von „Aura Seeker“)",
+   "typ": "hauptset",
+   "datum": "2027-01-01",
+   "genauigkeit": "monat",
+   "status": "geruecht",
+   "notiz": "Noch nicht angekündigt. Ableitung aus JP-Release (27.11.2026) und Händlerlisten.",
+   "quelle": "https://pokennoisseur.ca/tools/release-calendar"
+  },
+  {
+   "spiel": "onepiece",
+   "name": "Heroines Edition Vol. 2",
+   "code": "EB-05",
+   "typ": "spezialset",
+   "datum": "2026-10-30",
+   "status": "bestaetigt",
+   "notiz": "Termin der englischen Version (in der EU erhältlich).",
+   "quelle": "https://samuraiswordtokyo.com/blogs/news/one-piece-card-game-news-october-november-2026-calendar"
+  },
+  {
+   "spiel": "onepiece",
+   "name": "The Dominance of God",
+   "code": "OP-18",
+   "typ": "hauptset",
+   "datum": "2026-11-20",
+   "status": "bestaetigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://tcgking.nl/blogs/collecting/one-piece-card-game-release-schedule-2026-set-list"
+  },
+  {
+   "spiel": "magic",
+   "name": "Star Trek",
+   "code": "TRK",
+   "typ": "hauptset",
+   "datum": "2026-11-13",
+   "prerelease": "2026-11-06",
+   "status": "bestaetigt",
+   "notiz": "Universes Beyond, inkl. Commander-Decks.",
+   "quelle": "https://www.thesparkmtg.com/p/mtg-release-schedule-2026-2027"
+  },
+  {
+   "spiel": "magic",
+   "name": "Nauctis: The Sunken Realm",
+   "code": "NAU",
+   "typ": "hauptset",
+   "datum": "2027-02-05",
+   "status": "bestaetigt",
+   "quelle": "https://draftsim.com/mtg-release-schedule/"
+  },
+  {
+   "spiel": "magic",
+   "name": "Marvel: Darkhold Destiny",
+   "code": "MDD",
+   "typ": "hauptset",
+   "datum": "2027-04-09",
+   "status": "bestaetigt",
+   "notiz": "Universes Beyond, inkl. Commander-Deck.",
+   "quelle": "https://thepodcompanion.com/sets/upcoming/"
+  },
+  {
+   "spiel": "magic",
+   "name": "Kamigawa: Titanbreach",
+   "typ": "hauptset",
+   "datum": "2027-06-04",
+   "status": "bestaetigt",
+   "quelle": "https://draftsim.com/mtg-release-schedule/"
+  },
+  {
+   "spiel": "magic",
+   "name": "Universes-Beyond-Set (noch ohne Namen)",
+   "typ": "hauptset",
+   "datum": "2027-08-06",
+   "status": "angekuendigt",
+   "quelle": "https://www.thegamer.com/magic-the-gathering-2027-release-schedule/"
+  },
+  {
+   "spiel": "magic",
+   "name": "Zhalfir",
+   "typ": "hauptset",
+   "datum": "2027-10-01",
+   "status": "bestaetigt",
+   "quelle": "https://draftsim.com/mtg-release-schedule/"
+  },
+  {
+   "spiel": "magic",
+   "name": "Universes-Beyond-Set (noch ohne Namen)",
+   "typ": "hauptset",
+   "datum": "2027-11-19",
+   "status": "angekuendigt",
+   "quelle": "https://www.thegamer.com/magic-the-gathering-2027-release-schedule/"
+  },
+  {
+   "spiel": "lorcana",
+   "name": "Hyperia City",
+   "code": "Set 14",
+   "typ": "hauptset",
+   "datum": "2026-10-23",
+   "prerelease": "2026-10-16",
+   "status": "bestaetigt",
+   "quelle": "https://www.wargamer.com/disney-lorcana/sets"
+  },
+  {
+   "spiel": "lorcana",
+   "name": "Into the Inkdark",
+   "code": "Set 15",
+   "typ": "hauptset",
+   "datum": "2027-02-12",
+   "prerelease": "2027-02-05",
+   "status": "bestaetigt",
+   "notiz": "Erstmals mit Collector Boostern.",
+   "quelle": "https://collectorstation.com/disney-lorcana-schedule-for-upcoming-sets-and-reprints"
+  },
+  {
+   "spiel": "lorcana",
+   "name": "Cosmic Quest",
+   "code": "Set 16",
+   "typ": "hauptset",
+   "datum": "2027-04-01",
+   "genauigkeit": "quartal",
+   "status": "angekuendigt",
+   "quelle": "https://collectorstation.com/disney-lorcana-schedule-for-upcoming-sets-and-reprints"
+  },
+  {
+   "spiel": "yugioh",
+   "name": "Beyond the Brave",
+   "typ": "hauptset",
+   "datum": "2026-10-09",
+   "status": "bestaetigt",
+   "notiz": "US-Termin; in der EU oft einen Tag früher.",
+   "quelle": "https://www.yugioh-card.com/en/products/booster-pack/"
+  },
+  {
+   "spiel": "yugioh",
+   "name": "Magnificent Maestros",
+   "typ": "spezialset",
+   "datum": "2026-11-13",
+   "status": "bestaetigt",
+   "notiz": "US-Termin; in der EU oft einen Tag früher.",
+   "quelle": "https://www.yugioh-world.com/2026/10/15/new-yu-gi-oh-tcg-releases-bring-fan-favorite-monsters-rare-collectibles-this-fall/"
+  },
+  {
+   "spiel": "yugioh",
+   "name": "Glorious Victors",
+   "typ": "hauptset",
+   "datum": "2026-12-04",
+   "status": "bestaetigt",
+   "notiz": "US-Termin; in der EU oft einen Tag früher.",
+   "quelle": "https://icv2.com/articles/news/view/63153/new-yu-gi-oh-tcg-booster-set-revealed"
+  },
+  {
+   "spiel": "yugioh",
+   "name": "Structure Decks Seto Kaiba & Yugi Muto",
+   "typ": "deck",
+   "datum": "2026-12-10",
+   "status": "angekuendigt",
+   "notiz": "Nur aus Händlerliste (Australien) – noch offiziell bestätigen.",
+   "quelle": "https://www.ikoncollectables.com.au/yu-gi-oh-schedule/"
+  },
+  {
+   "spiel": "yugioh",
+   "name": "Immortal Phoenix",
+   "typ": "hauptset",
+   "datum": "2027-01-29",
+   "status": "bestaetigt",
+   "notiz": "US-Termin; in der EU oft einen Tag früher.",
+   "quelle": "https://www.yugioh-card.com/en/products/booster-pack/"
+  },
+  {
+   "spiel": "riftbound",
+   "name": "Radiance",
+   "code": "RAD",
+   "typ": "hauptset",
+   "datum": "2026-10-23",
+   "prerelease": "2026-10-16",
+   "status": "bestaetigt",
+   "quelle": "https://playriftbound.com/en-us/news/announcements/products-and-sets-into-2027/"
+  },
+  {
+   "spiel": "riftbound",
+   "name": "Gift of the Rift Bundle",
+   "typ": "sonstiges",
+   "datum": "2026-12-04",
+   "status": "bestaetigt",
+   "quelle": "https://playriftbound.com/en-us/news/announcements/products-and-sets-into-2027/"
+  },
+  {
+   "spiel": "riftbound",
+   "name": "Legacy",
+   "code": "LGC",
+   "typ": "hauptset",
+   "datum": "2027-01-29",
+   "prerelease": "2027-01-22",
+   "status": "bestaetigt",
+   "quelle": "https://playriftbound.com/en-us/news/announcements/products-and-sets-into-2027/"
+  },
+  {
+   "spiel": "riftbound",
+   "name": "Proving Grounds 2nd Edition",
+   "typ": "deck",
+   "datum": "2027-02-19",
+   "status": "bestaetigt",
+   "quelle": "https://playriftbound.com/en-us/news/announcements/products-and-sets-into-2027/"
+  },
+  {
+   "spiel": "riftbound",
+   "name": "The Reckoning",
+   "code": "REC",
+   "typ": "hauptset",
+   "datum": "2027-04-30",
+   "prerelease": "2027-04-23",
+   "status": "bestaetigt",
+   "quelle": "https://playriftbound.com/en-us/news/announcements/products-and-sets-into-2027/"
+  },
+  {
+   "spiel": "riftbound",
+   "name": "Set 8 (Bandle City)",
+   "typ": "hauptset",
+   "datum": "2027-07-01",
+   "genauigkeit": "quartal",
+   "status": "angekuendigt",
+   "quelle": "https://playriftbound.com/en-us/news/announcements/products-and-sets-into-2027/"
+  },
+  {
+   "spiel": "riftbound",
+   "name": "Set 9",
+   "typ": "hauptset",
+   "datum": "2027-10-01",
+   "genauigkeit": "quartal",
+   "status": "angekuendigt",
+   "quelle": "https://playriftbound.com/en-us/news/announcements/products-and-sets-into-2027/"
+  },
+  {
+   "spiel": "swu",
+   "name": "Icons 2027 Edition",
+   "code": "IC27",
+   "typ": "spezialset",
+   "datum": "2026-11-20",
+   "status": "bestaetigt",
+   "notiz": "Kleineres Einsteiger-Set mit Starter Box.",
+   "quelle": "https://tradematches.app/en/blog/star-wars-unlimited-icons-2027"
+  },
+  {
+   "spiel": "gundam",
+   "name": "Stardust Trails",
+   "code": "GD06",
+   "typ": "hauptset",
+   "datum": "2026-10-30",
+   "status": "bestaetigt",
+   "quelle": "https://tcgindex.io/gundam/release-dates"
+  },
+  {
+   "spiel": "digimon",
+   "name": "Ignition of X",
+   "typ": "hauptset",
+   "datum": "2026-12-11",
+   "status": "angekuendigt",
+   "notiz": "Termin aus Händlerkatalog, offiziell prüfen.",
+   "quelle": "https://tcgindex.io/tcg-release-dates"
+  },
+  {
+   "spiel": "dbfw",
+   "name": "Reach the God",
+   "code": "FB12",
+   "typ": "hauptset",
+   "datum": "2026-12-18",
+   "status": "angekuendigt",
+   "notiz": "Quellen nennen 11.12. oder 18.12. für die englische Version.",
+   "quelle": "https://samuraiswordtokyo.com/blogs/news/dragon-ball-fusion-world-card-list"
+  },
+  {
+   "spiel": "dbfw",
+   "name": "Starter Decks FS13 & FS14",
+   "typ": "deck",
+   "datum": "2027-01-22",
+   "status": "angekuendigt",
+   "quelle": "https://www.akihabaratcgwarehouse.com/release-calendar/"
+  }
+ ]
+}

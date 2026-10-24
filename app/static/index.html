@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TCG-Release-Kalender</title>
+<meta name="description" content="Kommende Sets für Sammelkartenspiele – filtern und als Kalender abonnieren.">
+<link rel="alternate" type="application/atom+xml" title="Änderungen" href="/feed.xml">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='5' width='26' height='24' rx='4' fill='%232a55c9'/><rect x='3' y='5' width='26' height='7' rx='3' fill='%231a3a91'/><rect x='8' y='16' width='6' height='8' rx='1.5' fill='%23fff'/><rect x='17' y='16' width='6' height='8' rx='1.5' fill='%23fff' opacity='.6'/></svg>">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="kopf">
+    <div>
+      <h1 id="seitentitel">TCG-Release-Kalender</h1>
+      <p class="unter">Kommende Sets für Deutschland und die EU – filtern, anschauen, als Kalender abonnieren.</p>
+    </div>
+    <div class="kopf-rechts">
+      <div class="segment" role="group" aria-label="Ansicht">
+        <button data-ansicht="liste" aria-pressed="true">Liste</button>
+        <button data-ansicht="monat" aria-pressed="false">Monat</button>
+        <button data-ansicht="woche" aria-pressed="false">Woche</button>
+        <button data-ansicht="aenderungen" aria-pressed="false">Änderungen</button>
+      </div>
+      <button class="icon-knopf" id="design-knopf" type="button"></button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <details class="flaeche filter" id="filter-box" open>
+      <summary>Filter und Abo <span class="anz" id="filter-anz"></span></summary>
+      <div class="filter-inhalt">
+        <div class="gruppe suche">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="search" id="f-suche" placeholder="Set oder Code suchen" aria-label="Set oder Code suchen">
+        </div>
+
+        <div class="gruppe">
+          <div class="gruppe-kopf"><h2>Spiele</h2>
+            <div class="mini"><button type="button" data-alle="spiele">Alle</button><button type="button" data-keine="spiele">Keine</button></div></div>
+          <div class="chips" id="f-spiele"></div>
+        </div>
+
+        <div class="gruppe">
+          <div class="gruppe-kopf"><h2>Status</h2>
+            <div class="mini"><button type="button" data-alle="status">Alle</button></div></div>
+          <div class="chips" id="f-status"></div>
+        </div>
+
+        <div class="gruppe">
+          <div class="gruppe-kopf"><h2>Produkttyp</h2>
+            <div class="mini"><button type="button" data-alle="typ">Alle</button></div></div>
+          <div class="chips" id="f-typ"></div>
+        </div>
+
+        <div class="gruppe">
+          <div class="gruppe-kopf"><h2>Anzeige</h2></div>
+          <label class="schalter"><input type="checkbox" id="f-prerelease"> Prerelease-Termine anzeigen</label>
+          <label class="schalter"><input type="checkbox" id="f-ungenau" checked> Ungefähre Termine (Monat oder Quartal)</label>
+          <label class="schalter"><input type="checkbox" id="f-vergangen"> Ältere Releases in der Liste</label>
+        </div>
+
+        <div class="abo">
+          <div class="gruppe-kopf"><h2>Kalender abonnieren</h2></div>
+          <input class="abo-url" id="abo-url" readonly aria-label="Abo-Adresse">
+          <div class="knoepfe">
+            <a class="knopf primaer" id="abo-webcal">Abonnieren</a>
+            <button class="knopf" type="button" id="abo-kopieren">Link kopieren</button>
+            <a class="knopf" id="abo-google" target="_blank" rel="noopener">Google Kalender</a>
+          </div>
+          <p class="hinweis">Das Abo enthält genau die Filter von oben. Neue Sets und Terminänderungen erscheinen automatisch in deiner Kalender-App.</p>
+        </div>
+      </div>
+    </details>
+
+    <main>
+      <div class="leiste" id="leiste"></div>
+      <div id="inhalt" aria-live="polite"></div>
+    </main>
+  </div>
+</div>
+
+<dialog id="detail" aria-labelledby="detail-titel"></dialog>
+<div class="toast" id="toast" role="status"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

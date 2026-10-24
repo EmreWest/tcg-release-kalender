@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verwaltung – TCG-Release-Kalender</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="kopf">
+    <div><h1>Verwaltung</h1><p class="unter"><a href="/">Zur öffentlichen Ansicht</a></p></div>
+    <div class="kopf-rechts"><button class="icon-knopf" id="design-knopf" type="button"></button></div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="vorschlaege" aria-selected="true">Vorschläge <span id="anz-vorschlaege"></span></button>
+    <button role="tab" data-tab="termine" aria-selected="false">Termine</button>
+    <button role="tab" data-tab="spiele" aria-selected="false">Spiele</button>
+    <button role="tab" data-tab="import" aria-selected="false">Import</button>
+    <button role="tab" data-tab="system" aria-selected="false">System</button>
+  </nav>
+
+  <section id="tab-vorschlaege"></section>
+
+  <section id="tab-termine" hidden>
+    <div class="zeile zwischen" style="margin-bottom:12px">
+      <div class="zeile" style="flex:1;min-width:240px">
+        <input id="suche" type="search" placeholder="Termine suchen" style="max-width:260px">
+        <select id="termine-spiel" style="max-width:220px"><option value="">Alle Spiele</option></select>
+        <label class="schalter" style="margin:0"><input type="checkbox" id="termine-alt"> auch vergangene</label>
+      </div>
+      <button class="knopf primaer" id="neu" type="button">Termin anlegen</button>
+    </div>
+    <div class="flaeche tabelle-wrap"><table class="daten"><thead><tr>
+      <th>Datum</th><th>Spiel</th><th>Name</th><th>Typ</th><th>Status</th><th></th>
+    </tr></thead><tbody id="termine"></tbody></table></div>
+  </section>
+
+  <section id="tab-spiele" hidden>
+    <div class="flaeche tabelle-wrap"><table class="daten"><thead><tr>
+      <th>Farbe</th><th>Name</th><th>ID</th><th>Termine</th><th>Reihenfolge</th><th></th>
+    </tr></thead><tbody id="spiele"></tbody></table></div>
+    <div class="flaeche karte-innen">
+      <h2>Spiel hinzufügen</h2>
+      <div class="formular">
+        <label>ID (kurz, ohne Leerzeichen)<input id="sp-id" placeholder="fab"></label>
+        <label>Name<input id="sp-name" placeholder="Flesh and Blood"></label>
+        <label>Farbe<input id="sp-farbe" type="color" value="#6b7280"></label>
+      </div>
+      <button class="knopf" id="sp-los" type="button" style="margin-top:10px">Spiel hinzufügen</button>
+    </div>
+  </section>
+
+  <section id="tab-import" hidden>
+    <div class="flaeche karte-innen">
+      <p style="margin-top:0">Vorschläge als JSON-Liste einfügen. Sie erscheinen unter „Vorschläge“ und werden erst übernommen, wenn du sie bestätigst. Das Format steht in der Anleitung.</p>
+      <textarea id="import-text" style="min-height:220px;font-family:ui-monospace,Menlo,monospace;font-size:13px" placeholder='[{"aktion":"neu","daten":{"spiel":"pokemon","name":"…","datum":"2027-01-29","status":"angekuendigt"},"quelle":"https://…","begruendung":"…"}]'></textarea>
+      <div class="zeile" style="margin-top:8px">
+        <button class="knopf primaer" id="import-los" type="button">Vorschläge importieren</button>
+        <input type="file" id="import-datei" accept=".json,application/json" style="max-width:280px">
+      </div>
+      <p class="hinweis" id="import-ergebnis"></p>
+    </div>
+  </section>
+
+  <section id="tab-system" hidden>
+    <div class="flaeche karte-innen">
+      <h2>Automatische Recherche</h2>
+      <div id="status-text" class="hinweis" style="font-size:14px"></div>
+      <div class="zeile" style="margin-top:10px">
+        <select id="pruef-spiel" style="max-width:240px"><option value="">Alle Spiele</option></select>
+        <button class="knopf primaer" id="pruefen" type="button">Jetzt recherchieren</button>
+      </div>
+    </div>
+    <div class="flaeche karte-innen">
+      <h2>Benachrichtigungen</h2>
+      <div id="notify-text" class="hinweis" style="font-size:14px"></div>
+    </div>
+    <div class="flaeche karte-innen">
+      <h2>Sicherung</h2>
+      <a class="knopf" href="/api/admin/export">Alle Daten als JSON herunterladen</a>
+    </div>
+  </section>
+</div>
+
+<dialog id="dlg" class="formular-dialog">
+  <form method="dialog" id="dlg-form">
+    <h2 style="margin-top:0" id="dlg-titel">Termin</h2>
+    <div class="formular">
+      <label>Spiel<select name="spiel" required></select></label>
+      <label class="breit">Name<input name="name" required></label>
+      <label>Set-Code<input name="code"></label>
+      <label>Produkttyp<select name="typ"></select></label>
+      <label>Datum<input name="datum" type="date" required></label>
+      <label>Genauigkeit<select name="genauigkeit"></select></label>
+      <label>Prerelease<input name="prerelease" type="date"></label>
+      <label>Status<select name="status"></select></label>
+      <label class="breit">Notiz<textarea name="notiz"></textarea></label>
+      <label class="breit">Quelle (URL)<input name="quelle" type="url" placeholder="https://"></label>
+    </div>
+    <p class="hinweis">Bei Monat oder Quartal den ersten Tag des Zeitraums als Datum wählen. Ändert sich das Datum eines bestätigten Termins, wird er automatisch als „Verschoben“ markiert – außer du setzt den Status selbst.</p>
+    <div class="zeile zwischen" style="margin-top:14px">
+      <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
+      <button class="knopf primaer" value="ok">Speichern</button>
+    </div>
+  </form>
+</dialog>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+let META, TERMINE = [], SPIELE = [], dlgAktion = null;
+const FELDER = ["spiel","name","code","typ","datum","genauigkeit","prerelease","status","notiz","quelle"];
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = iso => iso ? new Date(iso + "T12:00:00").toLocaleDateString("de-DE") : "–";
+const heuteIso = () => new Date().toISOString().slice(0, 10);
+function toast(t) { const el = document.getElementById("toast"); el.textContent = t; el.classList.add("an"); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove("an"), 2400); }
+
+async function api(pfad, opt = {}) {
+  const r = await fetch(pfad, { ...opt, headers: { "Content-Type": "application/json", "X-Admin-Anfrage": "1", ...(opt.headers || {}) } });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.detail || r.statusText);
+  return j;
+}
+
+document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
+  document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b));
+  document.querySelectorAll("section[id^=tab-]").forEach(s => s.hidden = s.id !== "tab-" + b.dataset.tab);
+  if (b.dataset.tab === "system") ladeStatus();
+});
+
+function optionen(sel, obj) { sel.innerHTML = Object.entries(obj).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join(""); }
+function spielName(id) { return (META.spiele.find(s => s.id === id) || {}).name || id; }
+
+// --- Vorschläge ---------------------------------------------------------------
+function feldWert(k, v) {
+  if (v === null || v === undefined || v === "") return "–";
+  if (k === "spiel") return spielName(v);
+  if (k === "typ") return META.typen[v] || v;
+  if (k === "status") return META.status[v] || v;
+  if (k === "genauigkeit") return META.genauigkeit[v] || v;
+  if (k === "datum" || k === "prerelease") return fmt(v);
+  return v;
+}
+
+async function ladeVorschlaege() {
+  const liste = await api("/api/admin/vorschlaege");
+  document.getElementById("anz-vorschlaege").textContent = liste.length ? `(${liste.length})` : "";
+  const el = document.getElementById("tab-vorschlaege");
+  if (!liste.length) { el.innerHTML = `<div class="flaeche leer">Keine offenen Vorschläge. Neue kommen über die automatische Recherche oder den Import.</div>`; return; }
+  el.innerHTML = liste.map(v => {
+    let inhalt;
+    if (v.aktion === "aenderung" && v.release) {
+      inhalt = `<table class="diff">` + Object.entries(v.daten).map(([k, neu]) =>
+        `<tr><td>${k}</td><td class="alt">${esc(feldWert(k, v.release[k]))}</td><td class="neu">${esc(feldWert(k, neu))}</td></tr>`).join("") + `</table>`;
+    } else {
+      inhalt = `<table class="diff">` + FELDER.filter(k => v.daten[k]).map(k =>
+        `<tr><td>${k}</td><td>${esc(feldWert(k, v.daten[k]))}</td></tr>`).join("") + `</table>`;
+    }
+    const titel = v.aktion === "neu"
+      ? `Neu: ${esc(spielName(v.daten.spiel))} – ${esc(v.daten.name)}`
+      : `Änderung: ${esc(v.release ? spielName(v.release.spiel) + " – " + v.release.name : "Termin #" + v.release_id)}`;
+    return `<div class="flaeche vorschlag">
+      <div class="zeile zwischen"><strong>${titel}</strong><span class="hinweis" style="margin:0">${esc(v.herkunft || "")}, ${new Date(v.erstellt).toLocaleString("de-DE")}</span></div>
+      ${v.begruendung ? `<p style="margin:6px 0">${esc(v.begruendung)}</p>` : ""}
+      ${inhalt}
+      ${v.quelle ? `<p class="hinweis"><a href="${esc(v.quelle)}" target="_blank" rel="noopener">${esc(v.quelle)}</a></p>` : ""}
+      <div class="knoepfe">
+        <button class="knopf primaer" data-ok="${v.id}">Übernehmen</button>
+        <button class="knopf" data-edit="${v.id}">Bearbeiten und übernehmen</button>
+        <button class="knopf gefahr" data-nein="${v.id}">Ablehnen</button>
+      </div></div>`;
+  }).join("");
+  el.querySelectorAll("[data-ok]").forEach(b => b.onclick = async () => {
+    try { await api(`/api/admin/vorschlaege/${b.dataset.ok}/uebernehmen`, { method: "POST" }); toast("Übernommen"); allesLaden(); }
+    catch (e) { toast(e.message); }
+  });
+  el.querySelectorAll("[data-nein]").forEach(b => b.onclick = async () => {
+    await api(`/api/admin/vorschlaege/${b.dataset.nein}/ablehnen`, { method: "POST" }); toast("Abgelehnt"); ladeVorschlaege();
+  });
+  el.querySelectorAll("[data-edit]").forEach(b => b.onclick = () => {
+    const v = liste.find(x => x.id == b.dataset.edit);
+    const basis = v.aktion === "aenderung" && v.release ? { ...v.release, ...v.daten } : { ...v.daten, quelle: v.daten.quelle || v.quelle };
+    oeffneDialog("Vorschlag bearbeiten", basis, async daten => {
+      await api(`/api/admin/vorschlaege/${v.id}/uebernehmen`, { method: "POST", body: JSON.stringify(daten) });
+      toast("Übernommen"); allesLaden();
+    });
+  });
+}
+
+// --- Termine -----------------------------------------------------------------
+function renderTermine() {
+  const q = document.getElementById("suche").value.toLowerCase();
+  const sp = document.getElementById("termine-spiel").value;
+  const alt = document.getElementById("termine-alt").checked;
+  const grenze = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const rows = TERMINE.filter(r => (!q || (r.name + " " + r.spiel_name + " " + (r.code || "")).toLowerCase().includes(q))
+    && (!sp || r.spiel === sp) && (alt || r.datum >= grenze || r.genauigkeit !== "tag"));
+  document.getElementById("termine").innerHTML = rows.length ? rows.map(r => `<tr>
+    <td style="white-space:nowrap">${fmt(r.datum)}${r.genauigkeit !== "tag" ? ` <span class="hinweis">(${esc(META.genauigkeit[r.genauigkeit])})</span>` : ""}</td>
+    <td><span class="farbfeld" style="--c:${esc(r.spiel_farbe)}"></span> ${esc(r.spiel_name)}</td>
+    <td>${esc(r.name)}${r.code ? ` <span class="hinweis">${esc(r.code)}</span>` : ""}</td>
+    <td>${esc(META.typen[r.typ])}</td>
+    <td><span class="badge ${r.status_effektiv}">${esc(META.status[r.status_effektiv])}</span></td>
+    <td style="white-space:nowrap;text-align:right"><button class="knopf" data-bearb="${r.id}">Bearbeiten</button>
+      <button class="knopf gefahr" data-del="${r.id}">Löschen</button></td></tr>`).join("")
+    : `<tr><td colspan="6" class="hinweis">Keine Termine gefunden.</td></tr>`;
+  document.querySelectorAll("[data-bearb]").forEach(b => b.onclick = () => {
+    const r = TERMINE.find(x => x.id == b.dataset.bearb);
+    oeffneDialog("Termin bearbeiten", r, async daten => {
+      await api(`/api/admin/releases/${r.id}`, { method: "PUT", body: JSON.stringify(daten) });
+      toast("Gespeichert"); ladeTermine();
+    });
+  });
+  document.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    const r = TERMINE.find(x => x.id == b.dataset.del);
+    if (!confirm(`„${r.name}“ wirklich löschen?`)) return;
+    await api(`/api/admin/releases/${r.id}`, { method: "DELETE" }); toast("Gelöscht"); ladeTermine();
+  });
+}
+async function ladeTermine() { TERMINE = await api("/api/admin/releases"); renderTermine(); }
+["suche", "termine-spiel", "termine-alt"].forEach(id => document.getElementById(id).addEventListener("input", renderTermine));
+document.getElementById("neu").onclick = () => oeffneDialog("Termin anlegen",
+  { typ: "hauptset", genauigkeit: "tag", status: "angekuendigt", spiel: document.getElementById("termine-spiel").value || undefined },
+  async daten => { await api("/api/admin/releases", { method: "POST", body: JSON.stringify(daten) }); toast("Termin angelegt"); ladeTermine(); });
+
+// --- Spiele ------------------------------------------------------------------
+function renderSpiele() {
+  document.getElementById("spiele").innerHTML = SPIELE.map((s, i) => `<tr data-id="${esc(s.id)}">
+    <td><input type="color" value="${esc(s.farbe)}" data-feld="farbe" aria-label="Farbe ${esc(s.name)}" style="width:48px"></td>
+    <td><input value="${esc(s.name)}" data-feld="name" aria-label="Name"></td>
+    <td><code>${esc(s.id)}</code></td>
+    <td>${s.anzahl}</td>
+    <td style="white-space:nowrap"><button class="knopf" data-hoch ${i === 0 ? "disabled" : ""} aria-label="Nach oben">↑</button>
+      <button class="knopf" data-runter ${i === SPIELE.length - 1 ? "disabled" : ""} aria-label="Nach unten">↓</button></td>
+    <td style="text-align:right"><button class="knopf gefahr" data-spiel-del ${s.anzahl ? "disabled title=\"Erst alle Termine dieses Spiels löschen\"" : ""}>Löschen</button></td>
+  </tr>`).join("");
+  document.querySelectorAll("#spiele [data-feld]").forEach(inp => inp.onchange = async () => {
+    const id = inp.closest("tr").dataset.id;
+    try { await api(`/api/admin/spiele/${id}`, { method: "PUT", body: JSON.stringify({ [inp.dataset.feld]: inp.value }) }); toast("Gespeichert"); await ladeMeta(); }
+    catch (e) { toast(e.message); }
+  });
+  const tauschen = async (i, j) => {
+    const a = SPIELE[i], b = SPIELE[j];
+    await api(`/api/admin/spiele/${a.id}`, { method: "PUT", body: JSON.stringify({ reihenfolge: j }) });
+    await api(`/api/admin/spiele/${b.id}`, { method: "PUT", body: JSON.stringify({ reihenfolge: i }) });
+    await ladeMeta();
+  };
+  document.querySelectorAll("#spiele [data-hoch]").forEach(b => b.onclick = async () => {
+    const i = SPIELE.findIndex(s => s.id === b.closest("tr").dataset.id);
+    await normalisieren(); await tauschen(i, i - 1);
+  });
+  document.querySelectorAll("#spiele [data-runter]").forEach(b => b.onclick = async () => {
+    const i = SPIELE.findIndex(s => s.id === b.closest("tr").dataset.id);
+    await normalisieren(); await tauschen(i, i + 1);
+  });
+  document.querySelectorAll("#spiele [data-spiel-del]").forEach(b => b.onclick = async () => {
+    const id = b.closest("tr").dataset.id;
+    if (!confirm(`Spiel „${spielName(id)}“ löschen?`)) return;
+    try { await api(`/api/admin/spiele/${id}`, { method: "DELETE" }); toast("Spiel gelöscht"); await ladeMeta(); }
+    catch (e) { toast(e.message); }
+  });
+}
+async function normalisieren() {
+  // Reihenfolge lückenlos durchnummerieren, damit Tauschen eindeutig ist
+  for (let i = 0; i < SPIELE.length; i++) {
+    if (SPIELE[i].reihenfolge !== i) await api(`/api/admin/spiele/${SPIELE[i].id}`, { method: "PUT", body: JSON.stringify({ reihenfolge: i }) });
+  }
+}
+document.getElementById("sp-los").onclick = async () => {
+  try {
+    await api("/api/admin/spiele", { method: "POST", body: JSON.stringify({
+      id: document.getElementById("sp-id").value, name: document.getElementById("sp-name").value, farbe: document.getElementById("sp-farbe").value }) });
+    toast("Spiel hinzugefügt");
+    document.getElementById("sp-id").value = ""; document.getElementById("sp-name").value = "";
+    await ladeMeta();
+  } catch (e) { toast(e.message); }
+};
+
+// --- Dialog ------------------------------------------------------------------
+function oeffneDialog(titel, werte, speichern) {
+  const f = document.getElementById("dlg-form");
+  document.getElementById("dlg-titel").textContent = titel;
+  FELDER.forEach(k => { if (werte[k] !== undefined) f.elements[k].value = werte[k] ?? ""; else if (k !== "spiel") f.elements[k].value = ""; });
+  dlgAktion = speichern;
+  document.getElementById("dlg").showModal();
+}
+document.getElementById("dlg").addEventListener("close", async () => {
+  const dlg = document.getElementById("dlg");
+  if (dlg.returnValue !== "ok" || !dlgAktion) return;
+  const f = document.getElementById("dlg-form");
+  const daten = {};
+  FELDER.forEach(k => daten[k] = f.elements[k].value.trim() || null);
+  try { await dlgAktion(daten); } catch (e) { toast("Nicht gespeichert: " + e.message); dlg.showModal(); }
+});
+
+// --- Import ------------------------------------------------------------------
+document.getElementById("import-datei").onchange = async e => {
+  const datei = e.target.files[0]; if (datei) document.getElementById("import-text").value = await datei.text();
+};
+document.getElementById("import-los").onclick = async () => {
+  const erg = document.getElementById("import-ergebnis");
+  let liste;
+  try {
+    liste = JSON.parse(document.getElementById("import-text").value);
+    if (!Array.isArray(liste)) liste = liste.vorschlaege || [liste];
+  } catch (e) { erg.textContent = "Kein gültiges JSON: " + e.message; return; }
+  try {
+    const r = await api("/api/admin/import", { method: "POST", body: JSON.stringify(liste) });
+    erg.textContent = `${r.angelegt} Vorschläge importiert.` + (r.fehler.length ? " Nicht importiert: " + r.fehler.join("; ") : "");
+    ladeVorschlaege();
+  } catch (e) { erg.textContent = e.message; }
+};
+
+// --- System ------------------------------------------------------------------
+async function ladeStatus() {
+  const s = await api("/api/admin/status");
+  const el = document.getElementById("status-text");
+  const n = s.benachrichtigungen;
+  document.getElementById("notify-text").innerHTML = (n.discord || n.webhook)
+    ? `Aktiv: ${[n.discord && "Discord", n.webhook && "Webhook"].filter(Boolean).join(", ")}. Jede Änderung an einem Termin wird gesendet.`
+    : "Aus. Mit <code>DISCORD_WEBHOOK_URL</code> oder <code>WEBHOOK_URL</code> bekommst du jede Änderung automatisch geschickt.";
+  if (!s.claude_aktiv) {
+    el.innerHTML = "Aus. Setze <code>ANTHROPIC_API_KEY</code>, damit regelmäßig nach neuen Sets und Terminänderungen gesucht wird. Ohne Schlüssel kannst du Vorschläge über „Import“ einspielen.";
+    document.getElementById("pruefen").disabled = true;
+    return;
+  }
+  el.innerHTML = `Modell: ${esc(s.modell)}, alle ${s.intervall_tage} Tage<br>
+    Letzte Recherche: ${s.letzte_pruefung ? new Date(s.letzte_pruefung).toLocaleString("de-DE") : "noch nie"}<br>
+    ${s.laeuft ? "<strong>Recherche läuft …</strong>" : (s.letzte_meldung ? "Ergebnis: " + esc(s.letzte_meldung) : "")}`;
+  document.getElementById("pruefen").disabled = s.laeuft;
+  if (s.laeuft) setTimeout(() => { ladeStatus(); ladeVorschlaege(); }, 8000);
+}
+document.getElementById("pruefen").onclick = async () => {
+  const sp = document.getElementById("pruef-spiel").value;
+  try { await api("/api/admin/pruefen" + (sp ? "?spiel=" + sp : ""), { method: "POST" }); toast("Recherche gestartet"); setTimeout(ladeStatus, 500); }
+  catch (e) { toast(e.message); }
+};
+
+async function ladeMeta() {
+  [META, SPIELE] = await Promise.all([api("/api/meta"), api("/api/admin/spiele")]);
+  const f = document.getElementById("dlg-form");
+  const opts = META.spiele.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+  f.elements.spiel.innerHTML = opts;
+  const st = { ...META.status }; delete st.erschienen;
+  optionen(f.elements.status, st);
+  optionen(f.elements.typ, META.typen);
+  optionen(f.elements.genauigkeit, META.genauigkeit);
+  const ts = document.getElementById("termine-spiel"), alt = ts.value;
+  ts.innerHTML = `<option value="">Alle Spiele</option>` + opts; ts.value = alt;
+  document.getElementById("pruef-spiel").innerHTML = `<option value="">Alle Spiele</option>` + opts;
+  renderSpiele();
+}
+async function allesLaden() { await ladeVorschlaege(); await ladeTermine(); }
+(async () => { await ladeMeta(); await allesLaden(); })();
+</script>
+</body>
+</html>

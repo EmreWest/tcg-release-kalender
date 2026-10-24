@@ -1,0 +1,10 @@
+services:
+  tcg-kalender:
+    image: ghcr.io/emrewest/tcg-release-kalender:latest
+    container_name: tcg-kalender
+    restart: unless-stopped
+    ports:
+      - "8085:8000"
+    volumes:
+      - ./data:/data
+    env_file: .env
