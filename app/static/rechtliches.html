@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{SEITE}} – {{TITEL}}</title>
+<link rel="icon" type="{{FAVICON_TYP}}" href="{{FAVICON}}">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
+</head>
+<body>
+<div class="wrap text-seite">
+  <header class="kopf">
+    <div class="marke">
+      {{KOPF_LOGO}}
+      <div>
+        <p class="unter" style="margin:0 0 2px"><a href="/">Zurück zum Kalender</a></p>
+        <h1>{{SEITE}}</h1>
+      </div>
+    </div>
+    <div class="kopf-rechts"><button class="icon-knopf" id="design-knopf" type="button"></button></div>
+  </header>
+  <main class="flaeche rechtstext">
+{{INHALT}}
+  </main>
+  <footer class="fuss">{{FUSS}}</footer>
+</div>
+<script src="/static/hinweise.js" data-datenschutz="{{DATENSCHUTZ_URL}}"></script>
+</body>
+</html>

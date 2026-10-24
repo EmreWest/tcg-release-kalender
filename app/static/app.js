@@ -65,8 +65,11 @@ async function kopieren(text, meldung) {
   try { await navigator.clipboard.writeText(text); toast(meldung); }
   catch (e) { window.prompt("Zum Kopieren markieren:", text); }
 }
-function speicherLesen(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
-function speicherSchreiben(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+// Filter und letzter Besuch sind Komfort-Daten: nur mit Einwilligung lesen und schreiben (siehe hinweise.js)
+const komfortErlaubt = () => !!(window.TCGSpeicher && window.TCGSpeicher.komfort());
+function speicherLesen(k) { if (!komfortErlaubt()) return null; try { return localStorage.getItem(k); } catch (e) { return null; } }
+function speicherSchreiben(k, v) { if (!komfortErlaubt()) return; try { localStorage.setItem(k, v); } catch (e) {} }
+function besuchMerken() { speicherSchreiben("tcg-letzter-besuch", new Date().toISOString().replace(/\.\d+Z$/, "Z")); }
 
 function markierung(r) {
   if (!VORHER_BESUCH) return "";
@@ -553,7 +556,11 @@ function navigieren(richtung) {
     return;
   }
   VORHER_BESUCH = speicherLesen("tcg-letzter-besuch");
-  speicherSchreiben("tcg-letzter-besuch", new Date().toISOString().replace(/\.\d+Z$/, "Z"));
+  besuchMerken();
+  if (window.TCGSpeicher) window.TCGSpeicher.beiAenderung((komfort) => {
+    if (komfort) { einstellungenSpeichern(); besuchMerken(); }
+    else { VORHER_BESUCH = null; rendern(); }
+  });
   if (window.matchMedia("(max-width: 900px)").matches) $("#filter-box").open = false;
 
   einstellungenLaden();

@@ -251,3 +251,33 @@ def test_ygo_typ_erkennung():
     assert quellen._ygo_typ("Beyond the Brave", 100) == "hauptset"
     assert quellen._ygo_typ("Magnificent Maestros", 24) == "spezialset"
     assert quellen._ygo_typ("2026 Mega-Tin", 60) == "sonstiges"
+
+
+def test_rechtliches_und_manifest(client):
+    assert client.get("/impressum").status_code == 404
+    seite = client.get("/").text
+    assert 'href="/impressum"' not in seite and "data-speicher-einstellungen" in seite
+
+    text = "## Angaben\nMuster <b>GbR</b>\nE-Mail: info@example.org\n\n- Punkt https://example.org/x"
+    assert client.put("/api/admin/einstellungen", json={"impressum": text, "datenschutz": "Text"},
+                      auth=ADMIN, headers=H).status_code == 200
+    imp = client.get("/impressum")
+    assert imp.status_code == 200
+    assert "<h2>Angaben</h2>" in imp.text and "&lt;b&gt;GbR&lt;/b&gt;" in imp.text
+    assert 'href="mailto:info@example.org"' in imp.text and 'href="https://example.org/x"' in imp.text
+    seite = client.get("/").text
+    assert 'href="/impressum"' in seite and 'data-datenschutz="/datenschutz"' in seite
+
+    m = client.get("/manifest.webmanifest")
+    assert m.headers["content-type"].startswith("application/manifest+json")
+    assert m.json()["display"] == "standalone" and m.json()["icons"]
+
+    e = client.get("/api/admin/einstellungen", auth=ADMIN).json()
+    assert "§ 5 DDG" in e["vorlage_impressum"] and "TDDDG" in e["vorlage_datenschutz"]
+
+
+def test_formatieren_ohne_html():
+    from app import rechtliches
+    html_text = rechtliches.formatieren('<script>alert(1)</script>\n## <img src=x onerror=1>\njavascript:alert(1)')
+    assert "<script>" not in html_text and "<img" not in html_text
+    assert 'href="javascript' not in html_text

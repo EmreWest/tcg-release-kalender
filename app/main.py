@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
-from . import atom, checker, db, einstellungen, ics, logos, notify, quellen
+from . import atom, checker, db, einstellungen, ics, logos, notify, quellen, rechtliches
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("tcg-kalender")
@@ -77,7 +77,7 @@ def _fehler(e: Exception):
 
 # --- Öffentlich -----------------------------------------------------------------
 
-def _seite(datei: str) -> Response:
+def _seite(datei: str, extra: dict | None = None, status_code: int = 200) -> Response:
     """Liefert eine HTML-Seite mit Titel, Untertitel, Logo und Favicon aus den Einstellungen."""
     e = einstellungen.lesen()
     with open(os.path.join(STATIC, datei), encoding="utf-8") as f:
@@ -86,6 +86,12 @@ def _seite(datei: str) -> Response:
     favicon = _favicon_datei(e)
     kopf_logo = (f'<img class="seiten-logo" src="/logos/{html.escape(e["logo"])}" alt="{titel}">'
                  if e["logo"] else "")
+    apple = ""
+    if favicon and favicon.rsplit(".", 1)[1] in ("png", "jpg"):
+        apple = f'<link rel="apple-touch-icon" href="/logos/{html.escape(favicon)}">'
+    fuss = ['<a href="/impressum">Impressum</a>' if e["impressum"] else "",
+            '<a href="/datenschutz">Datenschutz</a>' if e["datenschutz"] else "",
+            '<button type="button" class="link-knopf" data-speicher-einstellungen>Speicher-Einstellungen</button>']
     ersetzungen = {
         "{{TITEL}}": titel,
         "{{UNTERTITEL}}": html.escape(e["untertitel"]),
@@ -93,10 +99,15 @@ def _seite(datei: str) -> Response:
         "{{TITEL_KLASSE}}": "" if e["titel_zeigen"] or not e["logo"] else "nur-screenreader",
         "{{FAVICON}}": f"/favicon?v={html.escape(favicon or 'standard')}",
         "{{FAVICON_TYP}}": logos.MEDIENTYP.get((favicon or "x.svg").rsplit(".", 1)[1], "image/svg+xml"),
+        "{{APPLE_ICON}}": apple,
+        "{{FUSS}}": "".join(x for x in fuss if x),
+        "{{DATENSCHUTZ_URL}}": "/datenschutz" if e["datenschutz"] else "",
+        **(extra or {}),
     }
     for k, v in ersetzungen.items():
         inhalt = inhalt.replace(k, v)
-    return Response(inhalt, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+    return Response(inhalt, media_type="text/html; charset=utf-8", status_code=status_code,
+                    headers={"Cache-Control": "no-cache"})
 
 
 def _favicon_datei(e: dict) -> str | None:
@@ -109,6 +120,47 @@ def _favicon_datei(e: dict) -> str | None:
 @app.get("/", include_in_schema=False)
 def index():
     return _seite("index.html")
+
+
+def _rechtliches(art: str, ueberschrift: str) -> Response:
+    text = einstellungen.lesen()[art]
+    if not text:
+        inhalt = "<p>Diese Seite wurde noch nicht eingerichtet.</p>"
+    else:
+        inhalt = rechtliches.formatieren(text)
+    return _seite("rechtliches.html", {"{{SEITE}}": ueberschrift, "{{INHALT}}": inhalt},
+                  status_code=200 if text else 404)
+
+
+@app.get("/impressum", include_in_schema=False)
+def impressum():
+    return _rechtliches("impressum", "Impressum")
+
+
+@app.get("/datenschutz", include_in_schema=False)
+def datenschutz():
+    return _rechtliches("datenschutz", "Datenschutzerklärung")
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+def manifest():
+    e = einstellungen.lesen()
+    favicon = _favicon_datei(e)
+    typ = logos.MEDIENTYP.get((favicon or "x.svg").rsplit(".", 1)[1], "image/svg+xml")
+    icon = f"/favicon?v={favicon or 'standard'}"
+    daten = {
+        "name": e["titel"],
+        "short_name": e["titel"] if len(e["titel"]) <= 15 else e["titel"][:15].rstrip(" -–"),
+        "description": e["untertitel"],
+        "lang": "de",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#f3f4f7",
+        "theme_color": "#2a55c9",
+        "icons": [{"src": icon, "type": typ, "sizes": "any", "purpose": "any"}],
+    }
+    return JSONResponse(daten, media_type="application/manifest+json", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/favicon", include_in_schema=False)
@@ -234,7 +286,8 @@ def admin_seite(_=Depends(admin)):
 def admin_einstellungen(_=Depends(admin)):
     e = einstellungen.lesen()
     return {**e, "logo_url": _logo_url(e["logo"]), "favicon_url": _logo_url(e["favicon"]),
-            "auto_modi": einstellungen.AUTO_MODI, "standard_domains": einstellungen.STANDARD_DOMAINS}
+            "auto_modi": einstellungen.AUTO_MODI, "standard_domains": einstellungen.STANDARD_DOMAINS,
+            "vorlage_impressum": rechtliches.VORLAGE_IMPRESSUM, "vorlage_datenschutz": rechtliches.VORLAGE_DATENSCHUTZ}
 
 
 @app.put("/api/admin/einstellungen")

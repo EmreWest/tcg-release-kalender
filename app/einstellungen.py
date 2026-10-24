@@ -37,6 +37,8 @@ def standard() -> dict:
         "favicon": None,
         "auto_uebernahme": modus if modus in AUTO_MODI else "aus",
         "offizielle_domains": STANDARD_DOMAINS,
+        "impressum": "",
+        "datenschutz": "",
     }
 
 
@@ -82,6 +84,9 @@ def aendern(daten: dict) -> dict:
         if daten["auto_uebernahme"] not in AUTO_MODI:
             raise ValueError("Unbekannter Modus für die automatische Übernahme")
         neu["auto_uebernahme"] = daten["auto_uebernahme"]
+    for feld in ("impressum", "datenschutz"):
+        if feld in daten:
+            neu[feld] = str(daten[feld] or "").strip()[:30000]
     if "offizielle_domains" in daten:
         neu["offizielle_domains"] = _domains(daten["offizielle_domains"])
     return _speichern(aktuell | neu)

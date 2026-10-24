@@ -22,6 +22,7 @@
     <button role="tab" data-tab="spiele" aria-selected="false">Spiele</button>
     <button role="tab" data-tab="import" aria-selected="false">Import</button>
     <button role="tab" data-tab="darstellung" aria-selected="false">Darstellung</button>
+    <button role="tab" data-tab="rechtliches" aria-selected="false">Rechtliches</button>
     <button role="tab" data-tab="system" aria-selected="false">System</button>
   </nav>
 
@@ -95,6 +96,30 @@
         <button class="knopf gefahr" id="ds-favicon-weg" type="button" hidden>Entfernen</button>
       </div>
       <p class="hinweis">Optional, für ein eigenes Symbol im Browser-Tab und auf dem Homescreen. Am besten quadratisch, z. B. 512 × 512 Pixel oder SVG. Ohne Favicon wird das Logo verwendet, ohne beides das Standard-Symbol.</p>
+    </div>
+  </section>
+
+  <section id="tab-rechtliches" hidden>
+    <div class="flaeche karte-innen">
+      <h2>Impressum</h2>
+      <textarea id="re-impressum" style="min-height:260px"></textarea>
+      <div class="zeile" style="margin-top:8px">
+        <button class="knopf" type="button" data-vorlage="impressum">Vorlage einsetzen</button>
+        <a class="knopf" href="/impressum" target="_blank" rel="noopener">Ansehen</a>
+      </div>
+    </div>
+    <div class="flaeche karte-innen">
+      <h2>Datenschutzerklärung</h2>
+      <textarea id="re-datenschutz" style="min-height:360px"></textarea>
+      <div class="zeile" style="margin-top:8px">
+        <button class="knopf" type="button" data-vorlage="datenschutz">Vorlage einsetzen</button>
+        <a class="knopf" href="/datenschutz" target="_blank" rel="noopener">Ansehen</a>
+      </div>
+    </div>
+    <div class="flaeche karte-innen">
+      <p class="hinweis" id="re-warnung" style="margin:0 0 10px;color:var(--warn)"></p>
+      <button class="knopf primaer" id="re-speichern" type="button">Speichern</button>
+      <p class="hinweis">Formatierung: Zeilen mit <code>## </code> werden zu Überschriften, Zeilen mit <code>- </code> zu Listenpunkten, eine Leerzeile beginnt einen neuen Absatz. Adressen mit http(s) und E-Mail-Adressen werden automatisch verlinkt. Die Vorlagen beschreiben genau, was diese Software speichert und verarbeitet; Felder in eckigen Klammern musst du ausfüllen. Sie ersetzen keine Rechtsberatung. Sobald ein Text gespeichert ist, erscheint der Link im Fuß der Seite.</p>
     </div>
   </section>
 
@@ -177,7 +202,7 @@ document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
   document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b));
   document.querySelectorAll("section[id^=tab-]").forEach(s => s.hidden = s.id !== "tab-" + b.dataset.tab);
   if (b.dataset.tab === "system") ladeStatus();
-  if (b.dataset.tab === "darstellung" || b.dataset.tab === "system") ladeEinstellungen();
+  if (["darstellung", "system", "rechtliches"].includes(b.dataset.tab)) ladeEinstellungen();
 });
 
 function optionen(sel, obj) { sel.innerHTML = Object.entries(obj).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join(""); }
@@ -400,7 +425,35 @@ async function ladeEinstellungen() {
   document.getElementById("auto-modus").innerHTML = Object.entries(EINST.auto_modi)
     .map(([k, v]) => `<option value="${k}" ${k === EINST.auto_uebernahme ? "selected" : ""}>${esc(v)}</option>`).join("");
   document.getElementById("auto-domains").value = EINST.offizielle_domains.join("\n");
+  document.getElementById("re-impressum").value = EINST.impressum;
+  document.getElementById("re-datenschutz").value = EINST.datenschutz;
+  rechtWarnung();
 }
+function rechtWarnung() {
+  const offen = ["impressum", "datenschutz"].filter(a => /\[[^\]]+\]/.test(document.getElementById(`re-${a}`).value));
+  const leer = ["impressum", "datenschutz"].filter(a => !document.getElementById(`re-${a}`).value.trim());
+  const teile = [];
+  if (leer.length) teile.push(`Noch leer: ${leer.map(a => a === "impressum" ? "Impressum" : "Datenschutzerklärung").join(", ")}.`);
+  if (offen.length) teile.push(`Noch nicht ausgefüllte Platzhalter in eckigen Klammern: ${offen.map(a => a === "impressum" ? "Impressum" : "Datenschutzerklärung").join(", ")}.`);
+  document.getElementById("re-warnung").textContent = teile.join(" ");
+  document.getElementById("re-warnung").hidden = !teile.length;
+}
+["re-impressum", "re-datenschutz"].forEach(id => document.getElementById(id).addEventListener("input", rechtWarnung));
+document.querySelectorAll("[data-vorlage]").forEach(b => b.onclick = () => {
+  const feld = document.getElementById(`re-${b.dataset.vorlage}`);
+  if (feld.value.trim() && !confirm("Den vorhandenen Text durch die Vorlage ersetzen?")) return;
+  feld.value = EINST[`vorlage_${b.dataset.vorlage}`];
+  rechtWarnung();
+  toast("Vorlage eingesetzt – Platzhalter ausfüllen und speichern");
+});
+document.getElementById("re-speichern").onclick = async () => {
+  try {
+    await api("/api/admin/einstellungen", { method: "PUT", body: JSON.stringify({
+      impressum: document.getElementById("re-impressum").value,
+      datenschutz: document.getElementById("re-datenschutz").value }) });
+    toast("Gespeichert"); ladeEinstellungen();
+  } catch (e) { toast(e.message); }
+};
 document.getElementById("ds-speichern").onclick = async () => {
   try {
     await api("/api/admin/einstellungen", { method: "PUT", body: JSON.stringify({

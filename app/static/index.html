@@ -7,7 +7,12 @@
 <meta name="description" content="{{UNTERTITEL}}">
 <link rel="alternate" type="application/atom+xml" title="Änderungen" href="/feed.xml">
 <link rel="icon" type="{{FAVICON_TYP}}" href="{{FAVICON}}">
-<link rel="apple-touch-icon" href="{{FAVICON}}">
+{{APPLE_ICON}}
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#2a55c9">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="{{TITEL}}">
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/theme.js"></script>
 </head>
@@ -86,8 +91,11 @@
   </div>
 </div>
 
+<footer class="wrap fuss">{{FUSS}}</footer>
+
 <dialog id="detail" aria-labelledby="detail-titel"></dialog>
 <div class="toast" id="toast" role="status"></div>
+<script src="/static/hinweise.js" data-datenschutz="{{DATENSCHUTZ_URL}}"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

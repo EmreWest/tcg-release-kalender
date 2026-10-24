@@ -21,6 +21,9 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 - Automatischer Abgleich mit offenen Daten-APIs: Magic-Sets über Scryfall, Yu-Gi-Oh!-Sets über YGOPRODeck – ohne Kosten und ohne manuelles Zutun.
 - Optional Recherche mit Claude für alle anderen Spiele: Neue Sets und Terminänderungen aus offiziellen Quellen werden automatisch übernommen, alles Unsichere landet als Vorschlag zur Prüfung.
 - Eigener Titel, Untertitel, Logo und Favicon, einstellbar in der Verwaltung.
+- Auf Mobilgeräten einmalig ein Hinweis mit Anleitung, wie man die Seite auf den Home-Bildschirm legt; sie startet dann wie eine App.
+- Speicher-Hinweis nach § 25 TDDDG: keine Cookies, kein Tracking; Komfort-Funktionen speichern erst nach Einwilligung.
+- Impressum und Datenschutzerklärung mit Vorlagen, pflegbar in der Verwaltung.
 
 ## Schnellstart mit Docker
 
@@ -190,6 +193,24 @@ Unter Verwaltung → Darstellung:
 
 `SEITENTITEL` und `SEITENUNTERTITEL` in der `.env` sind nur Startwerte; was du in der Verwaltung speicherst, hat Vorrang.
 
+## Impressum, Datenschutz und Speicher-Hinweis
+
+Die Seite setzt keine Cookies und bindet nichts von fremden Servern ein. Einige Werte speichert sie im lokalen Speicher des Browsers (localStorage); sie verlassen das Gerät nie. Rechtlich gilt dafür trotzdem § 25 TDDDG, deshalb wird unterschieden:
+
+| Schlüssel | Zweck | Einwilligung nötig |
+|---|---|---|
+| `tcg-design` | selbst gewähltes Design (nur gespeichert, wenn umgeschaltet wird) | nein |
+| `tcg-einwilligung` | Entscheidung zum Speicher-Hinweis | nein |
+| `tcg-homescreen-hinweis` | Home-Bildschirm-Hinweis wurde schon gezeigt | nein |
+| `tcg-filter` | gemerkte Filter und Ansicht | ja |
+| `tcg-letzter-besuch` | Markierung „Neu“ und „Geändert“ | ja |
+
+Beim ersten Besuch erscheint unten ein kleiner Hinweis mit zwei gleichwertigen Schaltflächen, „Nur notwendige“ und „Alle erlauben“. Er überdeckt nichts und lässt sich jederzeit über „Speicher-Einstellungen“ im Fuß der Seite wieder öffnen; ein Widerruf löscht die Komfort-Daten sofort.
+
+Auf Smartphones und Tablets erscheint danach einmalig ein Hinweis mit kurzer Anleitung (iPhone/iPad, Android Chrome, Samsung Internet, Firefox), wie man die Seite auf den Home-Bildschirm legt. Wo der Browser es anbietet, gibt es direkt eine Schaltfläche dafür. Der Hinweis lässt sich wegklicken und verschwindet nach 15 Sekunden von selbst; beim Antippen pausiert der Countdown. Auf Desktop-Rechnern und in der bereits installierten App erscheint er nicht.
+
+Unter Verwaltung → Rechtliches pflegst du Impressum und Datenschutzerklärung. Für beide gibt es Vorlagen, die genau beschreiben, was diese Software speichert und verarbeitet; die Felder in eckigen Klammern füllst du aus. Sobald ein Text gespeichert ist, erscheint der Link im Fuß der Seite. Die Vorlagen ersetzen keine Rechtsberatung.
+
 ## Termine pflegen
 
 In der Verwaltung unter `/admin`:
@@ -316,6 +337,8 @@ Alle öffentlichen Endpunkte liefern JSON bzw. Kalender- oder Feed-Dateien und b
 | `GET /feed.xml` | Änderungen als Atom-Feed; Parameter `spiele` |
 | `GET /logos/{datei}` | hochgeladene Logos (Adresse steht in `/api/meta`) |
 | `GET /favicon` | aktuelles Favicon |
+| `GET /manifest.webmanifest` | Web-App-Manifest für den Home-Bildschirm |
+| `GET /impressum`, `GET /datenschutz` | Rechtstexte aus der Verwaltung |
 | `GET /healthz` | Zustandsprüfung |
 
 Schreibende Verwaltungs-Endpunkte unter `/api/admin/` erwarten Benutzer und Passwort sowie den Header `X-Admin-Anfrage: 1` (Schutz gegen Anfragen fremder Webseiten).
@@ -347,6 +370,8 @@ Aufbau:
 | `app/logos.py` | Hochgeladene Logos prüfen und speichern |
 | `app/quellen.py` | Abgleich mit Scryfall und YGOPRODeck |
 | `app/einstellungen.py` | In der Verwaltung änderbare Einstellungen |
+| `app/rechtliches.py` | Vorlagen und Formatierung für Impressum und Datenschutz |
+| `app/static/hinweise.js` | Speicher-Hinweis und Home-Bildschirm-Hinweis |
 | `app/checker.py` | Automatische Recherche mit Claude |
 | `app/seed.json` | Startdaten für eine leere Datenbank |
 | `app/static/` | Oberfläche (HTML, CSS, JavaScript ohne Build-Schritt) |
