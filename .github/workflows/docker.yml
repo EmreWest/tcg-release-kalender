@@ -52,17 +52,19 @@ jobs:
 
       - name: Container starten und prüfen
         run: |
+          trap 'echo "--- Container-Log ---"; docker logs probe || true; docker rm -f probe >/dev/null 2>&1 || true' EXIT
           docker run -d --name probe -p 8000:8000 -e ADMIN_PASSWORT=probe tcg-kalender:probe
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8000/healthz >/dev/null; then break; fi
+            if curl -fsS http://127.0.0.1:8000/healthz >/dev/null 2>&1; then break; fi
             sleep 1
           done
           curl -fsS http://127.0.0.1:8000/healthz
           curl -fsS "http://127.0.0.1:8000/kalender.ics?spiele=pokemon" | grep -q "BEGIN:VEVENT"
-          test "$(docker exec probe id -u)" != "0" || (echo "Läuft als root" && exit 1)
+          # Der Serverprozess (PID 1) darf nicht als root laufen
+          uid=$(docker exec probe awk '/^Uid:/ {print $2}' /proc/1/status)
+          echo "Server läuft mit UID $uid"
+          test "$uid" != "0"
           docker exec probe ls -la /data
-          docker logs probe
-          docker rm -f probe
 
       - name: Tags bestimmen
         id: meta
