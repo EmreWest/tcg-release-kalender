@@ -7,6 +7,7 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 ## Funktionen
 
 - Liste, Monats- und Wochenansicht. Jedes Spiel hat eine eigene Farbe, ein Klick auf einen Termin zeigt alle Details.
+- Eigene Logos je Spiel: In der Verwaltung hochladen, sie erscheinen in den Filtern, an den Terminen und in der Detailansicht.
 - Kalender-Abo (`webcal://`) mit den gewählten Filtern; einzelne Termine lassen sich auch als `.ics`-Datei speichern.
 - Helles und dunkles Design (folgt standardmäßig der Systemeinstellung, umschaltbar).
 - Status je Termin: Gerücht, Angekündigt, Bestätigt, Verschoben, Abgesagt; „Erschienen“ ergibt sich automatisch aus dem Datum.
@@ -169,7 +170,11 @@ In der Verwaltung unter `/admin`:
 
 - Vorschläge: Was die automatische Recherche oder ein Import gefunden hat. Übernehmen, vor dem Übernehmen bearbeiten oder ablehnen. Bei Änderungen wird alt gegen neu angezeigt.
 - Termine: Alle Einträge anlegen, bearbeiten, löschen. Wird das Datum eines bestätigten Termins geändert, gilt er automatisch als „Verschoben“ und das alte Datum bleibt sichtbar – außer du setzt den Status selbst.
-- Spiele: Name, Farbe und Reihenfolge ändern, neue Spiele hinzufügen. Spiele mit Terminen lassen sich nicht löschen.
+- Spiele: Name, Farbe, Logo und Reihenfolge ändern, neue Spiele hinzufügen. Spiele mit Terminen lassen sich nicht löschen.
+
+### Logos
+
+Das Projekt enthält keine Logos. Wer welche zeigen möchte, lädt sie unter Verwaltung → Spiele hoch (PNG, WebP, JPEG oder SVG, höchstens 1 MB; SVGs mit Skripten werden abgelehnt). Sie werden in `data/logos/` gespeichert. Ohne Logo zeigt die Seite den Farbpunkt des Spiels. Logos von Sammelkartenspielen sind in der Regel markenrechtlich geschützt; ob du sie auf deiner Seite verwenden darfst, klärst du bitte selbst, etwa über die Richtlinien des Herstellers oder eine Händlervereinbarung.
 - Import: Vorschläge als JSON einfügen (Format unten).
 - System: Status der Recherche und der Benachrichtigungen, Datensicherung als JSON.
 
@@ -248,13 +253,14 @@ Alle öffentlichen Endpunkte liefern JSON bzw. Kalender- oder Feed-Dateien und b
 | `GET /kalender.ics` | Kalender-Abo (Parameter siehe oben) |
 | `GET /release/{id}.ics` | ein einzelner Termin als Kalenderdatei |
 | `GET /feed.xml` | Änderungen als Atom-Feed; Parameter `spiele` |
+| `GET /logos/{datei}` | hochgeladene Logos (Adresse steht in `/api/meta`) |
 | `GET /healthz` | Zustandsprüfung |
 
 Schreibende Verwaltungs-Endpunkte unter `/api/admin/` erwarten Benutzer und Passwort sowie den Header `X-Admin-Anfrage: 1` (Schutz gegen Anfragen fremder Webseiten).
 
 ## Datensicherung
 
-Es reicht, den Ordner `data` zu sichern. Alternativ unter System → „Alle Daten als JSON herunterladen“.
+Es reicht, den Ordner `data` zu sichern (Datenbank und Logos). Alternativ unter System → „Alle Daten als JSON herunterladen“.
 
 ## Entwicklung und Betrieb ohne Docker
 
@@ -276,6 +282,7 @@ Aufbau:
 | `app/ics.py` | Kalenderdateien nach RFC 5545 |
 | `app/atom.py` | Atom-Feed |
 | `app/notify.py` | Discord- und JSON-Webhooks |
+| `app/logos.py` | Hochgeladene Logos prüfen und speichern |
 | `app/checker.py` | Automatische Recherche mit Claude |
 | `app/seed.json` | Startdaten für eine leere Datenbank |
 | `app/static/` | Oberfläche (HTML, CSS, JavaScript ohne Build-Schritt) |

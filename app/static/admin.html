@@ -41,7 +41,7 @@
 
   <section id="tab-spiele" hidden>
     <div class="flaeche tabelle-wrap"><table class="daten"><thead><tr>
-      <th>Farbe</th><th>Name</th><th>ID</th><th>Termine</th><th>Reihenfolge</th><th></th>
+      <th>Farbe</th><th>Logo</th><th>Name</th><th>ID</th><th>Termine</th><th>Reihenfolge</th><th></th>
     </tr></thead><tbody id="spiele"></tbody></table></div>
     <div class="flaeche karte-innen">
       <h2>Spiel hinzufügen</h2>
@@ -230,6 +230,11 @@ document.getElementById("neu").onclick = () => oeffneDialog("Termin anlegen",
 function renderSpiele() {
   document.getElementById("spiele").innerHTML = SPIELE.map((s, i) => `<tr data-id="${esc(s.id)}">
     <td><input type="color" value="${esc(s.farbe)}" data-feld="farbe" aria-label="Farbe ${esc(s.name)}" style="width:48px"></td>
+    <td><div class="zeile" style="flex-wrap:nowrap">
+      <div class="spiel-logo-vorschau">${s.logo ? `<img src="/logos/${encodeURIComponent(s.logo)}" alt="Logo ${esc(s.name)}">` : "kein Logo"}</div>
+      <label class="knopf" style="cursor:pointer">${s.logo ? "Ersetzen" : "Hochladen"}<input type="file" data-logo accept="image/png,image/webp,image/jpeg,image/svg+xml" hidden></label>
+      ${s.logo ? `<button class="knopf gefahr" data-logo-weg aria-label="Logo entfernen">Entfernen</button>` : ""}
+    </div></td>
     <td><input value="${esc(s.name)}" data-feld="name" aria-label="Name"></td>
     <td><code>${esc(s.id)}</code></td>
     <td>${s.anzahl}</td>
@@ -240,6 +245,20 @@ function renderSpiele() {
   document.querySelectorAll("#spiele [data-feld]").forEach(inp => inp.onchange = async () => {
     const id = inp.closest("tr").dataset.id;
     try { await api(`/api/admin/spiele/${id}`, { method: "PUT", body: JSON.stringify({ [inp.dataset.feld]: inp.value }) }); toast("Gespeichert"); await ladeMeta(); }
+    catch (e) { toast(e.message); }
+  });
+  document.querySelectorAll("#spiele [data-logo]").forEach(inp => inp.onchange = async () => {
+    const datei = inp.files[0]; if (!datei) return;
+    const id = inp.closest("tr").dataset.id;
+    if (datei.size > 1024 * 1024) { toast("Die Datei ist größer als 1 MB"); return; }
+    try {
+      await api(`/api/admin/spiele/${id}/logo`, { method: "PUT", body: datei, headers: { "Content-Type": datei.type || "application/octet-stream" } });
+      toast("Logo gespeichert"); await ladeMeta(); ladeTermine();
+    } catch (e) { toast(e.message); }
+  });
+  document.querySelectorAll("#spiele [data-logo-weg]").forEach(b => b.onclick = async () => {
+    const id = b.closest("tr").dataset.id;
+    try { await api(`/api/admin/spiele/${id}/logo`, { method: "DELETE" }); toast("Logo entfernt"); await ladeMeta(); }
     catch (e) { toast(e.message); }
   });
   const tauschen = async (i, j) => {

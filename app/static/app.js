@@ -102,13 +102,24 @@ function nachTag(liste) {
   return m;
 }
 
-function chip(gruppe, wert, label, f) {
+// Logo eines Spiels als <img>, sofern in der Verwaltung eines hochgeladen wurde
+function logoUrl(spielId) {
+  const sp = META.spiele.find((x) => x.id === spielId);
+  return sp && sp.logo && /^\/logos\/[a-z0-9_-]+-[0-9a-f]{12}\.(png|webp|jpg|svg)$/.test(sp.logo) ? sp.logo : null;
+}
+function logo(spielId, klasse) {
+  const url = logoUrl(spielId);
+  return url ? `<img class="logo ${klasse}" src="${url}" alt="" loading="lazy" decoding="async">` : "";
+}
+
+function chip(gruppe, wert, label, f, mitLogo) {
   const b = document.createElement("button");
   b.type = "button";
   b.className = "chip";
   b.setAttribute("aria-pressed", zustand[gruppe].has(wert));
   if (f) b.style.setProperty("--c", farbe(f));
-  b.innerHTML = (f ? `<span class="punkt"></span>` : "") + esc(label);
+  const bild = mitLogo ? logo(wert, "logo-chip") : "";
+  b.innerHTML = (bild || (f ? `<span class="punkt"></span>` : "")) + esc(label);
   b.onclick = () => {
     zustand[gruppe].has(wert) ? zustand[gruppe].delete(wert) : zustand[gruppe].add(wert);
     b.setAttribute("aria-pressed", zustand[gruppe].has(wert));
@@ -118,7 +129,7 @@ function chip(gruppe, wert, label, f) {
 }
 function filterBauen() {
   const fs = $("#f-spiele"); fs.innerHTML = "";
-  META.spiele.forEach((s) => fs.append(chip("spiele", s.id, s.name, s.farbe)));
+  META.spiele.forEach((s) => fs.append(chip("spiele", s.id, s.name, s.farbe, true)));
   const st = $("#f-status"); st.innerHTML = "";
   Object.entries(META.status).forEach(([k, v]) => st.append(chip("status", k, v)));
   const ty = $("#f-typ"); ty.innerHTML = "";
@@ -232,7 +243,7 @@ function karte(e) {
   const datum = ca
     ? `<div class="datum-block"><div class="ca">${esc(ca.replace(/ \d{4}$/, ""))}</div></div>`
     : `<div class="datum-block"><div class="tag">${String(d.getDate()).padStart(2, "0")}</div><div class="wt">${WT_KURZ[d.getDay()]}</div></div>`;
-  const meta = [`<span class="spielname">${esc(r.spiel_name)}</span>`, `<span>${esc(e.pre ? "Prerelease" : META.typen[r.typ])}</span>`];
+  const meta = [`<span class="spielname">${logo(r.spiel, "logo-klein")}${esc(r.spiel_name)}</span>`, `<span>${esc(e.pre ? "Prerelease" : META.typen[r.typ])}</span>`];
   if (!e.pre && r.prerelease) meta.push(`<span>Prerelease ${fmt(r.prerelease)}</span>`);
   if (e.pre) meta.push(`<span>Release ${fmt(r.datum)}</span>`);
   if (r.vorheriges_datum && r.status === "verschoben") meta.push(`<span>vorher ${fmt(r.vorheriges_datum)}</span>`);
@@ -357,7 +368,7 @@ function wocheRendern() {
     html += `<div class="woche-tag${t === h ? " heute" : ""}">
       <div class="kopf-zeile"><b>${d.getDate()}</b><span>${WT_KURZ[d.getDay()]}</span></div>
       <div class="inhalt">${liste.length ? liste.map((e) => pille(e).replace("</span></button>",
-        `</span><small>${esc(e.r.spiel_name)}${e.pre ? "" : " · " + esc(META.typen[e.r.typ])}</small></button>`)).join("")
+        `</span><small>${logo(e.r.spiel, "logo-mini")}${esc(e.r.spiel_name)}${e.pre ? "" : " · " + esc(META.typen[e.r.typ])}</small></button>`)).join("")
         : `<span class="frei">–</span>`}</div>
     </div>`;
   }
@@ -389,7 +400,7 @@ async function aenderungenRendern() {
       : `<strong>${titel}</strong>`;
     return `<div class="aenderung" style="--c:${farbe(a.spiel_farbe)}">
       <span class="farbe"></span>
-      <div><div>${kopf}</div><div class="hinweis" style="margin:0">${esc(a.spiel_name || a.spiel)}</div>
+      <div><div>${kopf}</div><div class="hinweis" style="margin:0">${logo(a.spiel, "logo-mini")}${esc(a.spiel_name || a.spiel)}</div>
         ${a.text ? `<div class="text">${esc(a.text)}</div>` : ""}</div>
       <span class="zeit">${zeit.toLocaleDateString("de-DE")}</span>
     </div>`;
@@ -451,7 +462,7 @@ async function detailZeigen(id) {
     <div class="detail-inhalt" style="position:relative">
       <button type="button" class="icon-knopf schliessen-x" data-schliessen aria-label="Schließen">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
-      <div class="detail-spiel"><i></i>${esc(r.spiel_name)}</div>
+      <div class="detail-spiel">${logo(r.spiel, "logo-detail") || "<i></i>"}<span>${esc(r.spiel_name)}</span></div>
       <h2 id="detail-titel">${esc(r.name)}</h2>
       <div class="detail-datum"><b>${esc(datumText)}</b>${ca ? "" : `<span class="countdown${n >= 0 && n <= 7 ? " bald" : ""}">${countdown(r.datum)}</span>`}</div>
       <table class="detail-tabelle">${zeilen.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("")}</table>

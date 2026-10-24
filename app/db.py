@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
@@ -41,7 +42,8 @@ CREATE TABLE IF NOT EXISTS spiele (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     farbe TEXT NOT NULL DEFAULT '#6b7280',
-    reihenfolge INTEGER NOT NULL DEFAULT 100
+    reihenfolge INTEGER NOT NULL DEFAULT 100,
+    logo TEXT
 );
 CREATE TABLE IF NOT EXISTS releases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -112,6 +114,10 @@ def verbindung():
 def init():
     with verbindung() as con:
         con.executescript(SCHEMA)
+        # Migration: Logo-Spalte für ältere Datenbanken nachrüsten
+        spalten = {r["name"] for r in con.execute("PRAGMA table_info(spiele)")}
+        if "logo" not in spalten:
+            con.execute("ALTER TABLE spiele ADD COLUMN logo TEXT")
         leer = con.execute("SELECT COUNT(*) FROM spiele").fetchone()[0] == 0
     if leer and os.path.exists(SEED_PFAD):
         with open(SEED_PFAD, encoding="utf-8") as f:
@@ -180,7 +186,7 @@ def _farbe_pruefen(farbe: str) -> str:
 
 def spiel_anlegen(id_: str, name: str, farbe: str):
     id_ = (id_ or "").strip().lower()
-    if not id_ or not id_.replace("-", "").replace("_", "").isalnum():
+    if not re.fullmatch(r"[a-z0-9_-]{1,40}", id_):
         raise ValueError("ID darf nur Buchstaben, Ziffern, - und _ enthalten")
     if not (name or "").strip():
         raise ValueError("Name fehlt")
@@ -213,16 +219,29 @@ def spiel_aendern(id_: str, daten: dict):
             raise KeyError(id_)
 
 
-def spiel_loeschen(id_: str):
+def spiel_loeschen(id_: str) -> str | None:
+    """Löscht ein Spiel ohne Termine und gibt den Dateinamen seines Logos zurück."""
     with verbindung() as con:
         if con.execute("SELECT COUNT(*) FROM releases WHERE spiel = ?", (id_,)).fetchone()[0]:
             raise ValueError("Spiel hat noch Termine – erst diese löschen")
+        row = con.execute("SELECT logo FROM spiele WHERE id = ?", (id_,)).fetchone()
         con.execute("DELETE FROM spiele WHERE id = ?", (id_,))
+    return row["logo"] if row else None
+
+
+def spiel_logo_setzen(id_: str, datei: str | None) -> str | None:
+    """Setzt (oder entfernt mit None) das Logo eines Spiels und gibt das bisherige zurück."""
+    with verbindung() as con:
+        row = con.execute("SELECT logo FROM spiele WHERE id = ?", (id_,)).fetchone()
+        if not row:
+            raise KeyError(id_)
+        con.execute("UPDATE spiele SET logo = ? WHERE id = ?", (datei, id_))
+    return row["logo"]
 
 
 # --- Termine -----------------------------------------------------------------
 
-_RELEASE_SQL = ("SELECT r.*, s.name AS spiel_name, s.farbe AS spiel_farbe "
+_RELEASE_SQL = ("SELECT r.*, s.name AS spiel_name, s.farbe AS spiel_farbe, s.logo AS spiel_logo "
                 "FROM releases r JOIN spiele s ON s.id = r.spiel")
 
 
@@ -351,13 +370,13 @@ def _aenderung_dict(row) -> dict:
 def aenderung(aid: int) -> dict:
     with verbindung() as con:
         row = con.execute(
-            "SELECT a.*, s.name AS spiel_name, s.farbe AS spiel_farbe FROM aenderungen a "
+            "SELECT a.*, s.name AS spiel_name, s.farbe AS spiel_farbe, s.logo AS spiel_logo FROM aenderungen a "
             "LEFT JOIN spiele s ON s.id = a.spiel WHERE a.id = ?", (aid,)).fetchone()
     return _aenderung_dict(row)
 
 
 def aenderungen(limit=50, spiele_filter=None) -> list[dict]:
-    sql = ("SELECT a.*, s.name AS spiel_name, s.farbe AS spiel_farbe FROM aenderungen a "
+    sql = ("SELECT a.*, s.name AS spiel_name, s.farbe AS spiel_farbe, s.logo AS spiel_logo FROM aenderungen a "
            "LEFT JOIN spiele s ON s.id = a.spiel")
     args: list = []
     if spiele_filter:

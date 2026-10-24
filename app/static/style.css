@@ -335,3 +335,14 @@ dialog.formular-dialog { padding: 20px; width: min(720px, calc(100vw - 24px)); }
   .segment { flex: 1; }
   .segment button { flex: 1; padding: 6px 4px; font-size: 13px; }
 }
+
+/* Spiel-Logos (vom Betreiber hochgeladen) */
+img.logo { display: inline-block; object-fit: contain; flex: none; vertical-align: middle; }
+.logo-chip { height: 16px; max-width: 44px; }
+.chip[aria-pressed="false"] .logo-chip { filter: grayscale(1); opacity: .45; }
+.logo-klein { height: 16px; max-width: 48px; margin-right: 6px; position: relative; top: -1px; }
+.logo-mini { height: 12px; max-width: 36px; margin-right: 4px; position: relative; top: -1px; }
+.logo-detail { height: 28px; max-width: 120px; }
+.detail-spiel { min-height: 28px; }
+.spiel-logo-vorschau { width: 72px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--rand-stark); border-radius: 6px; background: var(--fl2); color: var(--text3); font-size: 11px; }
+.spiel-logo-vorschau img { max-width: 64px; max-height: 26px; object-fit: contain; }

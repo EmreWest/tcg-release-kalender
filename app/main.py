@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
-from . import atom, checker, db, ics, notify
+from . import atom, checker, db, ics, logos, notify
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("tcg-kalender")
@@ -81,11 +81,16 @@ def index():
     return FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-cache"})
 
 
+def _logo_url(datei: str | None) -> str | None:
+    return f"/logos/{datei}" if datei else None
+
+
 @app.get("/api/meta")
 def meta():
     return {
         "titel": SEITENTITEL,
-        "spiele": [{k: s[k] for k in ("id", "name", "farbe")} for s in db.spiele()],
+        "spiele": [{**{k: s[k] for k in ("id", "name", "farbe")}, "logo": _logo_url(s["logo"])}
+                   for s in db.spiele()],
         "status": db.STATUS_FILTER,
         "typen": db.TYPEN,
         "genauigkeit": db.GENAUIGKEIT,
@@ -154,6 +159,19 @@ def feed_xml(request: Request, spiele: str | None = None):
     body = atom.feed(eintraege, basis(request), f"{SEITENTITEL} – Änderungen", selbst)
     return Response(body, media_type="application/atom+xml; charset=utf-8",
                     headers={"Cache-Control": "public, max-age=900"})
+
+
+@app.get("/logos/{datei}", include_in_schema=False)
+def logo(datei: str):
+    pfad = logos.pfad(datei)
+    if not pfad:
+        raise HTTPException(404, "Nicht gefunden")
+    endung = datei.rsplit(".", 1)[1]
+    return FileResponse(pfad, media_type=logos.MEDIENTYP[endung], headers={
+        # Dateinamen enthalten einen Hash, ein geändertes Logo bekommt einen neuen Namen
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+    })
 
 
 @app.get("/healthz", include_in_schema=False)
@@ -226,9 +244,32 @@ def admin_spiel_aendern(sid: str, daten: dict = Body(...), _=Depends(admin)):
 @app.delete("/api/admin/spiele/{sid}")
 def admin_spiel_loeschen(sid: str, _=Depends(admin)):
     try:
-        db.spiel_loeschen(sid)
+        logos.entfernen_datei(db.spiel_loeschen(sid))
     except Exception as e:  # noqa: BLE001
         _fehler(e)
+    return {"ok": True}
+
+
+@app.put("/api/admin/spiele/{sid}/logo")
+async def admin_logo_hochladen(sid: str, request: Request, _=Depends(admin)):
+    if int(request.headers.get("content-length") or 0) > logos.MAX_GROESSE:
+        raise HTTPException(413, "Die Datei ist größer als 1 MB")
+    inhalt = await request.body()
+    try:
+        datei = logos.speichern(sid, inhalt, request.headers.get("content-type", ""))
+    except KeyError:
+        raise HTTPException(404, "Spiel nicht gefunden")
+    except ValueError as e:
+        _fehler(e)
+    return {"logo": _logo_url(datei)}
+
+
+@app.delete("/api/admin/spiele/{sid}/logo")
+def admin_logo_entfernen(sid: str, _=Depends(admin)):
+    try:
+        logos.entfernen(sid)
+    except KeyError:
+        raise HTTPException(404, "Spiel nicht gefunden")
     return {"ok": True}
 
 

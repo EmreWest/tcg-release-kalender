@@ -125,3 +125,33 @@ def test_benachrichtigung_beobachter(client, monkeypatch):
     client.put(f"/api/admin/releases/{rid}", json={"name": "Neuer Name"}, auth=ADMIN, headers=H)
     assert gesehen and gesehen[0]["art"] == "geaendert"
     assert json.dumps(gesehen[0]["details"])
+
+
+PNG = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
+       b"\x00\x00\x00\rIDATx\x9cc\xf8\xcf\xc0\xf0\x1f\x00\x05\x00\x01\xff\x89\x99=\x1d\x00\x00\x00\x00IEND\xaeB`\x82")
+
+
+def test_logo_hochladen_und_entfernen(client):
+    url = "/api/admin/spiele/pokemon/logo"
+    hdr = {**H, "Content-Type": "image/png"}
+    # falscher Typ und falscher Inhalt werden abgelehnt
+    assert client.put(url, content=b"abc", auth=ADMIN, headers={**H, "Content-Type": "text/plain"}).status_code == 400
+    assert client.put(url, content=b"kein png", auth=ADMIN, headers=hdr).status_code == 400
+    boese = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    assert client.put(url, content=boese, auth=ADMIN, headers={**H, "Content-Type": "image/svg+xml"}).status_code == 400
+    assert client.put(url, content=PNG, auth=ADMIN, headers={"Content-Type": "image/png"}).status_code == 403
+
+    antwort = client.put(url, content=PNG, auth=ADMIN, headers=hdr)
+    assert antwort.status_code == 200
+    logo_url = antwort.json()["logo"]
+    meta = {s["id"]: s for s in client.get("/api/meta").json()["spiele"]}
+    assert meta["pokemon"]["logo"] == logo_url
+    bild = client.get(logo_url)
+    assert bild.status_code == 200 and bild.content == PNG
+    assert bild.headers["content-type"] == "image/png"
+    assert "default-src 'none'" in bild.headers["content-security-policy"]
+    assert client.get("/logos/../test.db").status_code == 404
+
+    assert client.delete(url, auth=ADMIN, headers=H).status_code == 200
+    assert client.get(logo_url).status_code == 404
+    assert client.get("/api/meta").json()["spiele"][0]["logo"] is None
