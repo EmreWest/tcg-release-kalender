@@ -1,6 +1,7 @@
 import logging
 import os
 import secrets
+import html
 import threading
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
@@ -10,7 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
-from . import atom, checker, db, ics, logos, notify
+from . import atom, checker, db, einstellungen, ics, logos, notify, quellen
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("tcg-kalender")
@@ -19,7 +20,6 @@ ADMIN_USER = (os.environ.get("ADMIN_USER") or "admin")
 ADMIN_PASSWORT = os.environ.get("ADMIN_PASSWORT", "")
 UID_DOMAIN = (os.environ.get("UID_DOMAIN") or "tcg-kalender.local")
 OEFFENTLICHE_URL = os.environ.get("OEFFENTLICHE_URL", "").rstrip("/")
-SEITENTITEL = (os.environ.get("SEITENTITEL") or "TCG-Release-Kalender")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 
@@ -30,6 +30,7 @@ async def lifespan(_app: FastAPI):
     if not ADMIN_PASSWORT:
         log.warning("ADMIN_PASSWORT ist nicht gesetzt – der Admin-Bereich ist gesperrt.")
     checker.starte_hintergrund()
+    quellen.starte_hintergrund()
     yield
 
 
@@ -76,9 +77,51 @@ def _fehler(e: Exception):
 
 # --- Öffentlich -----------------------------------------------------------------
 
+def _seite(datei: str) -> Response:
+    """Liefert eine HTML-Seite mit Titel, Untertitel, Logo und Favicon aus den Einstellungen."""
+    e = einstellungen.lesen()
+    with open(os.path.join(STATIC, datei), encoding="utf-8") as f:
+        inhalt = f.read()
+    titel = html.escape(e["titel"])
+    favicon = _favicon_datei(e)
+    kopf_logo = (f'<img class="seiten-logo" src="/logos/{html.escape(e["logo"])}" alt="{titel}">'
+                 if e["logo"] else "")
+    ersetzungen = {
+        "{{TITEL}}": titel,
+        "{{UNTERTITEL}}": html.escape(e["untertitel"]),
+        "{{KOPF_LOGO}}": kopf_logo,
+        "{{TITEL_KLASSE}}": "" if e["titel_zeigen"] or not e["logo"] else "nur-screenreader",
+        "{{FAVICON}}": f"/favicon?v={html.escape(favicon or 'standard')}",
+        "{{FAVICON_TYP}}": logos.MEDIENTYP.get((favicon or "x.svg").rsplit(".", 1)[1], "image/svg+xml"),
+    }
+    for k, v in ersetzungen.items():
+        inhalt = inhalt.replace(k, v)
+    return Response(inhalt, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+
+
+def _favicon_datei(e: dict) -> str | None:
+    for kandidat in (e.get("favicon"), e.get("logo")):
+        if kandidat and logos.pfad(kandidat):
+            return kandidat
+    return None
+
+
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-cache"})
+    return _seite("index.html")
+
+
+@app.get("/favicon", include_in_schema=False)
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    datei = _favicon_datei(einstellungen.lesen())
+    if datei:
+        endung = datei.rsplit(".", 1)[1]
+        return FileResponse(logos.pfad(datei), media_type=logos.MEDIENTYP[endung],
+                            headers={"Cache-Control": "public, max-age=3600",
+                                     "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"})
+    return FileResponse(os.path.join(STATIC, "favicon.svg"), media_type="image/svg+xml",
+                        headers={"Cache-Control": "public, max-age=3600"})
 
 
 def _logo_url(datei: str | None) -> str | None:
@@ -88,7 +131,8 @@ def _logo_url(datei: str | None) -> str | None:
 @app.get("/api/meta")
 def meta():
     return {
-        "titel": SEITENTITEL,
+        "titel": (e := einstellungen.lesen())["titel"],
+        "untertitel": e["untertitel"],
         "spiele": [{**{k: s[k] for k in ("id", "name", "farbe")}, "logo": _logo_url(s["logo"])}
                    for s in db.spiele()],
         "status": db.STATUS_FILTER,
@@ -132,7 +176,7 @@ def kalender(request: Request, spiele: str | None = None, status: str | None = N
     else:
         alle = {s["id"]: s["name"] for s in db.spiele()}
         gewaehlt = _liste(spiele) or []
-        titel = SEITENTITEL
+        titel = einstellungen.lesen()["titel"]
         if gewaehlt and len(gewaehlt) <= 3:
             titel += ": " + ", ".join(alle.get(g, g) for g in gewaehlt)
     body = ics.feed(rows, titel, UID_DOMAIN, bool(prerelease), basis(request))
@@ -156,7 +200,7 @@ def release_ics(rid: int, request: Request):
 def feed_xml(request: Request, spiele: str | None = None):
     eintraege = db.aenderungen(50, _liste(spiele))
     selbst = str(request.url)
-    body = atom.feed(eintraege, basis(request), f"{SEITENTITEL} – Änderungen", selbst)
+    body = atom.feed(eintraege, basis(request), f"{einstellungen.lesen()['titel']} – Änderungen", selbst)
     return Response(body, media_type="application/atom+xml; charset=utf-8",
                     headers={"Cache-Control": "public, max-age=900"})
 
@@ -183,7 +227,55 @@ def healthz():
 
 @app.get("/admin", include_in_schema=False)
 def admin_seite(_=Depends(admin)):
-    return FileResponse(os.path.join(STATIC, "admin.html"), headers={"Cache-Control": "no-cache"})
+    return _seite("admin.html")
+
+
+@app.get("/api/admin/einstellungen")
+def admin_einstellungen(_=Depends(admin)):
+    e = einstellungen.lesen()
+    return {**e, "logo_url": _logo_url(e["logo"]), "favicon_url": _logo_url(e["favicon"]),
+            "auto_modi": einstellungen.AUTO_MODI, "standard_domains": einstellungen.STANDARD_DOMAINS}
+
+
+@app.put("/api/admin/einstellungen")
+def admin_einstellungen_aendern(daten: dict = Body(...), _=Depends(admin)):
+    try:
+        einstellungen.aendern(daten)
+    except ValueError as e:
+        _fehler(e)
+    return admin_einstellungen()
+
+
+@app.put("/api/admin/darstellung/{art}")
+async def admin_darstellung_hochladen(art: str, request: Request, _=Depends(admin)):
+    if art not in ("logo", "favicon"):
+        raise HTTPException(404, "Nicht gefunden")
+    if int(request.headers.get("content-length") or 0) > logos.MAX_GROESSE:
+        raise HTTPException(413, "Die Datei ist größer als 1 MB")
+    try:
+        datei = logos.datei_speichern(f"_seite-{art}", await request.body(), request.headers.get("content-type", ""))
+    except ValueError as e:
+        _fehler(e)
+    alt = einstellungen.datei_setzen(art, datei)
+    if alt and alt != datei:
+        logos.entfernen_datei(alt)
+    return {"url": _logo_url(datei)}
+
+
+@app.delete("/api/admin/darstellung/{art}")
+def admin_darstellung_entfernen(art: str, _=Depends(admin)):
+    if art not in ("logo", "favicon"):
+        raise HTTPException(404, "Nicht gefunden")
+    logos.entfernen_datei(einstellungen.datei_setzen(art, None))
+    return {"ok": True}
+
+
+@app.post("/api/admin/quellen/abgleich")
+def admin_abgleich(quelle: str | None = None, _=Depends(admin)):
+    if quellen.status["laeuft"]:
+        return {"gestartet": False, "meldung": "Abgleich läuft bereits."}
+    threading.Thread(target=quellen.abgleichen, args=(quelle,), daemon=True).start()
+    return {"gestartet": True}
 
 
 @app.get("/api/admin/releases")
@@ -314,6 +406,7 @@ def admin_status(_=Depends(admin)):
         "letzte_meldung": checker.status["letzte_meldung"],
         "letzte_pruefung": db.meta_get("letzte_pruefung"),
         "benachrichtigungen": {"discord": bool(notify.DISCORD_URL), "webhook": bool(notify.WEBHOOK_URL)},
+        "quellen": quellen.info(),
     }
 
 

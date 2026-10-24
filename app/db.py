@@ -84,6 +84,13 @@ CREATE TABLE IF NOT EXISTS aenderungen (
     details TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_aenderungen_zeit ON aenderungen(zeit);
+CREATE TABLE IF NOT EXISTS quellen_stand (
+    extern_id TEXT PRIMARY KEY,
+    release_id INTEGER,
+    datum TEXT,
+    name TEXT,
+    gesehen TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
     schluessel TEXT PRIMARY KEY,
     wert TEXT
@@ -324,7 +331,8 @@ def anlegen(daten: dict, protokoll=True) -> int:
     return rid
 
 
-def aendern(rid: int, daten: dict):
+def aendern(rid: int, daten: dict, korrektur: bool = False):
+    """Ändert einen Termin. Mit korrektur=True gilt eine Datumsänderung nicht als Verschiebung."""
     alt = release(rid)
     if not alt:
         raise KeyError(rid)
@@ -332,7 +340,8 @@ def aendern(rid: int, daten: dict):
     d = {k: v for k, v in d.items() if v != alt.get(k)}
     if not d:
         return
-    if "datum" in d and alt["datum"] and alt["genauigkeit"] == "tag" and d.get("genauigkeit", "tag") == "tag":
+    if not korrektur and "datum" in d and alt["datum"] and alt["genauigkeit"] == "tag" \
+            and d.get("genauigkeit", "tag") == "tag":
         d["vorheriges_datum"] = alt["datum"]
         # Ein bestätigter Termin, der sich ändert, gilt als verschoben – außer der Status wird explizit gesetzt
         if "status" not in d and alt["status"] == "bestaetigt":
@@ -347,7 +356,7 @@ def aendern(rid: int, daten: dict):
         )
     if relevante:
         neu = {**alt, **d}
-        _protokoll("verschoben" if "datum" in relevante else "geaendert", neu, relevante)
+        _protokoll("verschoben" if "datum" in relevante and not korrektur else "geaendert", neu, relevante)
 
 
 def loeschen(rid: int):

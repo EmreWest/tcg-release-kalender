@@ -18,7 +18,9 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 - Benachrichtigungen bei Änderungen per Discord-Webhook oder beliebigem JSON-Webhook.
 - Teilbare Links: Filter, Ansicht und geöffneter Termin stehen in der Adresse.
 - Verwaltung mit Passwortschutz: Termine und Spiele (Name, Farbe, Reihenfolge) pflegen, Vorschläge prüfen, JSON-Import und -Export.
-- Optional halbautomatische Pflege: Claude recherchiert regelmäßig per Websuche und legt Vorschläge an, die erst nach deiner Bestätigung übernommen werden.
+- Automatischer Abgleich mit offenen Daten-APIs: Magic-Sets über Scryfall, Yu-Gi-Oh!-Sets über YGOPRODeck – ohne Kosten und ohne manuelles Zutun.
+- Optional Recherche mit Claude für alle anderen Spiele: Neue Sets und Terminänderungen aus offiziellen Quellen werden automatisch übernommen, alles Unsichere landet als Vorschlag zur Prüfung.
+- Eigener Titel, Untertitel, Logo und Favicon, einstellbar in der Verwaltung.
 
 ## Schnellstart mit Docker
 
@@ -66,14 +68,23 @@ ADMIN_PASSWORT=hier-ein-langes-passwort
 OEFFENTLICHE_URL=
 # Domain für die IDs der Kalendereinträge – nach dem ersten Abo nicht mehr ändern
 UID_DOMAIN=tcg-kalender.local
-SEITENTITEL=TCG-Release-Kalender
 
-# Optional: automatische Recherche mit Claude
+# Startwerte für Titel und Untertitel – später in der Verwaltung unter „Darstellung“ änderbar
+SEITENTITEL=TCG-Release-Kalender
+SEITENUNTERTITEL=
+
+# Automatischer Abgleich mit offenen Daten-APIs (Magic über Scryfall, Yu-Gi-Oh! über YGOPRODeck)
+QUELLEN=scryfall,ygoprodeck
+QUELLEN_INTERVALL_STUNDEN=12
+
+# Optional: automatische Recherche mit Claude für alle anderen Spiele
 ANTHROPIC_API_KEY=
 CLAUDE_MODEL=claude-sonnet-5-5
 CHECK_INTERVALL_TAGE=7
 CHECK_STUNDE=6
 CLAUDE_MAX_SUCHEN_PRO_SPIEL=6
+# Startwert für die automatische Übernahme: aus, offiziell oder alle (in der Verwaltung änderbar)
+CLAUDE_AUTO_UEBERNAHME=offiziell
 
 # Optional: Benachrichtigungen bei Änderungen
 DISCORD_WEBHOOK_URL=
@@ -117,7 +128,10 @@ Alle Einstellungen laufen über Umgebungsvariablen (in der `.env`).
 | `ADMIN_PASSWORT` | Passwort für `/admin`. Ohne Passwort ist die Verwaltung gesperrt. | leer |
 | `OEFFENTLICHE_URL` | Adresse, unter der die Seite erreichbar ist, z. B. `https://kalender.example.org`. Wird für Links im Feed, in Kalendereinträgen und Benachrichtigungen verwendet. | wird aus der Anfrage ermittelt |
 | `UID_DOMAIN` | Domain für die eindeutigen IDs der Kalendereinträge. Nach dem ersten Abo nicht mehr ändern, sonst entstehen doppelte Einträge. | `tcg-kalender.local` |
-| `SEITENTITEL` | Überschrift der Seite und Name des Kalenders | `TCG-Release-Kalender` |
+| `SEITENTITEL` | Startwert für Überschrift, Browser-Tab und Kalendername. Danach in der Verwaltung unter „Darstellung“ änderbar. | `TCG-Release-Kalender` |
+| `SEITENUNTERTITEL` | Startwert für den Untertitel | kurzer Beschreibungstext |
+| `QUELLEN` | Aktive Daten-APIs, kommagetrennt: `scryfall`, `ygoprodeck`. Leer = aus. | `scryfall,ygoprodeck` |
+| `QUELLEN_INTERVALL_STUNDEN` | Abstand des Abgleichs in Stunden | `12` |
 | `TZ` | Zeitzone des Containers | `Europe/Berlin` |
 | `ANTHROPIC_API_KEY` | Aktiviert die automatische Recherche (siehe unten) | leer |
 | `CLAUDE_MODEL` | Modell für die Recherche | `claude-sonnet-5-5` |
@@ -125,6 +139,7 @@ Alle Einstellungen laufen über Umgebungsvariablen (in der `.env`).
 | `CLAUDE_MAX_SUCHEN_PRO_SPIEL` | Websuchen je Spiel und Durchlauf | `6` |
 | `CHECK_INTERVALL_TAGE` | Abstand der Recherche in Tagen, `0` schaltet sie ab | `7` |
 | `CHECK_STUNDE` | Frühester Start der Recherche (Stunde, Ortszeit) | `6` |
+| `CLAUDE_AUTO_UEBERNAHME` | Startwert für die automatische Übernahme: `aus`, `offiziell` oder `alle`. Danach in der Verwaltung änderbar. | `aus` |
 | `DISCORD_WEBHOOK_URL` | Änderungen an einen Discord-Kanal schicken | leer |
 | `WEBHOOK_URL` | Änderungen als JSON an eine beliebige Adresse schicken (z. B. Home Assistant, n8n) | leer |
 | `WEBHOOK_SPIELE` | Nur Änderungen dieser Spiele senden, z. B. `pokemon,onepiece` | alle |
@@ -164,6 +179,17 @@ https://kalender.example.org/kalender.ics?spiele=pokemon,onepiece&status=bestaet
 
 Ändert sich ein Termin, behält er seine ID. Kalender-Apps aktualisieren den vorhandenen Eintrag, statt einen zweiten anzulegen.
 
+## Darstellung anpassen
+
+Unter Verwaltung → Darstellung:
+
+- Titel: steht oben auf der Seite, im Browser-Tab, als Name des abonnierten Kalenders und im Feed.
+- Untertitel: die Zeile unter dem Titel; leer lassen, um sie auszublenden.
+- Logo: erscheint links neben dem Titel. Enthält dein Logo den Namen schon, kannst du den Titel daneben ausblenden; er bleibt dann für Screenreader und im Browser-Tab erhalten.
+- Favicon: das Symbol im Browser-Tab und auf dem Homescreen. Ohne eigenes Favicon wird das Logo verwendet.
+
+`SEITENTITEL` und `SEITENUNTERTITEL` in der `.env` sind nur Startwerte; was du in der Verwaltung speicherst, hat Vorrang.
+
 ## Termine pflegen
 
 In der Verwaltung unter `/admin`:
@@ -180,11 +206,46 @@ Das Projekt enthält keine Logos. Wer welche zeigen möchte, lädt sie unter Ver
 
 Bei Monats- oder Quartalsangaben ist das Datum der erste Tag des Zeitraums (z. B. `2027-04-01` mit Genauigkeit „Quartal“ für Q2 2027).
 
+## Datenquellen (automatisch)
+
+Für Magic und Yu-Gi-Oh! gibt es offene, frei nutzbare Daten-APIs. Der Container gleicht sie standardmäßig alle 12 Stunden ab:
+
+| Quelle | Spiel | Liefert |
+|---|---|---|
+| [Scryfall](https://scryfall.com/docs/api) | Magic: The Gathering | alle angekündigten Sets mit weltweitem Release-Datum, inkl. Commander-Decks |
+| [YGOPRODeck](https://ygoprodeck.com/api-guide/) | Yu-Gi-Oh! | Sets mit TCG-Termin (Europa/Nordamerika), sobald die ersten Karten bekannt sind |
+
+So arbeitet der Abgleich:
+
+- Neue Sets werden direkt als „Bestätigt“ angelegt.
+- Bestehende Termine werden über Name oder Set-Code zugeordnet und beim ersten Treffer an die Quelle angeglichen (gilt als Korrektur, nicht als Verschiebung).
+- Ändert sich ein Termin später in der Quelle, wird er übernommen und als „Verschoben“ markiert.
+- Deine manuellen Änderungen bleiben erhalten, solange sich der Wert in der Quelle nicht ändert.
+- Löschst du einen Termin in der Verwaltung, wird er nicht wieder angelegt.
+
+Unter Verwaltung → System siehst du das Ergebnis des letzten Abgleichs und kannst ihn sofort starten. Der Container braucht dafür Zugriff auf `api.scryfall.com` und `db.ygoprodeck.com`.
+
+Für Pokémon, One Piece, Lorcana und die übrigen Spiele gibt es keine vergleichbaren offenen Schnittstellen mit kommenden Sets. Eigene Scraper für die Herstellerseiten sind bewusst nicht eingebaut: Sie brechen bei jedem Redesign, viele Seiten blocken automatisierte Abrufe, und manche Nutzungsbedingungen schließen sie aus. Für diese Spiele gibt es die Recherche mit Claude.
+
 ## Automatische Recherche mit Claude (optional)
 
 Mit gesetztem `ANTHROPIC_API_KEY` (erhältlich unter https://console.anthropic.com) durchsucht der Container im eingestellten Abstand für jedes Spiel einzeln das Web nach neuen Sets und Terminänderungen. Die Ergebnisse erscheinen als Vorschläge in der Verwaltung; ohne deine Bestätigung ändert sich nichts. Unter „System“ lässt sich ein Durchlauf auch sofort starten.
 
 Pro Durchlauf fallen API-Kosten für Tokens und Websuchen an. Die aktuellen Preise stehen unter https://docs.claude.com/en/docs/about-claude/pricing.
+
+Spiele, die bereits über eine Datenquelle abgeglichen werden (Magic, Yu-Gi-Oh!), überspringt die Recherche, um Kosten zu sparen. Einzeln lassen sie sich unter „System“ trotzdem recherchieren.
+
+### Automatische Übernahme
+
+Unter Verwaltung → System → „Gefundene Vorschläge“ legst du fest, was mit den Ergebnissen passiert:
+
+| Einstellung | Verhalten |
+|---|---|
+| Aus | Alle Vorschläge warten auf deine Prüfung. |
+| Offizielle Quellen | Automatisch übernommen wird, wenn die Quelle auf einer Domain aus der Liste offizieller Quellen liegt und der Termin ein festes Tagesdatum hat. Neue Sets zusätzlich nur mit Status „Bestätigt“. Alles andere bleibt zur Prüfung liegen. |
+| Alle | Jeder Vorschlag wird sofort übernommen. |
+
+Die Liste offizieller Quellen ist mit den Herstellerseiten vorbelegt und lässt sich dort bearbeiten (eine Domain pro Zeile, Subdomains zählen mit). Jede automatische Übernahme erscheint im Änderungsprotokoll und, falls eingerichtet, als Benachrichtigung. Vorschläge aus dem manuellen Import werden nie automatisch übernommen.
 
 Ohne API-Key funktioniert alles andere wie gewohnt. Vorschläge lassen sich dann über den Import einspielen.
 
@@ -254,6 +315,7 @@ Alle öffentlichen Endpunkte liefern JSON bzw. Kalender- oder Feed-Dateien und b
 | `GET /release/{id}.ics` | ein einzelner Termin als Kalenderdatei |
 | `GET /feed.xml` | Änderungen als Atom-Feed; Parameter `spiele` |
 | `GET /logos/{datei}` | hochgeladene Logos (Adresse steht in `/api/meta`) |
+| `GET /favicon` | aktuelles Favicon |
 | `GET /healthz` | Zustandsprüfung |
 
 Schreibende Verwaltungs-Endpunkte unter `/api/admin/` erwarten Benutzer und Passwort sowie den Header `X-Admin-Anfrage: 1` (Schutz gegen Anfragen fremder Webseiten).
@@ -283,6 +345,8 @@ Aufbau:
 | `app/atom.py` | Atom-Feed |
 | `app/notify.py` | Discord- und JSON-Webhooks |
 | `app/logos.py` | Hochgeladene Logos prüfen und speichern |
+| `app/quellen.py` | Abgleich mit Scryfall und YGOPRODeck |
+| `app/einstellungen.py` | In der Verwaltung änderbare Einstellungen |
 | `app/checker.py` | Automatische Recherche mit Claude |
 | `app/seed.json` | Startdaten für eine leere Datenbank |
 | `app/static/` | Oberfläche (HTML, CSS, JavaScript ohne Build-Schritt) |

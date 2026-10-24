@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Verwaltung – TCG-Release-Kalender</title>
+<title>Verwaltung – {{TITEL}}</title>
+<link rel="icon" type="{{FAVICON_TYP}}" href="{{FAVICON}}">
 <meta name="robots" content="noindex">
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/theme.js"></script>
@@ -20,6 +21,7 @@
     <button role="tab" data-tab="termine" aria-selected="false">Termine</button>
     <button role="tab" data-tab="spiele" aria-selected="false">Spiele</button>
     <button role="tab" data-tab="import" aria-selected="false">Import</button>
+    <button role="tab" data-tab="darstellung" aria-selected="false">Darstellung</button>
     <button role="tab" data-tab="system" aria-selected="false">System</button>
   </nav>
 
@@ -66,7 +68,44 @@
     </div>
   </section>
 
+  <section id="tab-darstellung" hidden>
+    <div class="flaeche karte-innen">
+      <h2>Kopf der Seite</h2>
+      <div class="formular">
+        <label class="breit">Titel (oben auf der Seite, im Browser-Tab und als Kalendername)<input id="ds-titel" maxlength="80"></label>
+        <label class="breit">Untertitel (leer lassen, um ihn auszublenden)<input id="ds-untertitel" maxlength="200"></label>
+      </div>
+      <label class="schalter" style="margin-top:10px"><input type="checkbox" id="ds-titel-zeigen"> Titel neben dem Logo anzeigen (ausschalten, wenn dein Logo den Namen schon enthält)</label>
+      <button class="knopf primaer" id="ds-speichern" type="button" style="margin-top:10px">Speichern</button>
+    </div>
+    <div class="flaeche karte-innen">
+      <h2>Logo</h2>
+      <div class="zeile">
+        <div class="spiel-logo-vorschau gross" id="ds-logo-vorschau"></div>
+        <label class="knopf" style="cursor:pointer"><span id="ds-logo-knopf">Hochladen</span><input type="file" id="ds-logo" accept="image/png,image/webp,image/jpeg,image/svg+xml" hidden></label>
+        <button class="knopf gefahr" id="ds-logo-weg" type="button" hidden>Entfernen</button>
+      </div>
+      <p class="hinweis">Erscheint links neben dem Titel. PNG, WebP, JPEG oder SVG, höchstens 1 MB. Ohne eigenes Favicon wird das Logo auch im Browser-Tab verwendet.</p>
+    </div>
+    <div class="flaeche karte-innen">
+      <h2>Favicon</h2>
+      <div class="zeile">
+        <div class="spiel-logo-vorschau" id="ds-favicon-vorschau"></div>
+        <label class="knopf" style="cursor:pointer"><span id="ds-favicon-knopf">Hochladen</span><input type="file" id="ds-favicon" accept="image/png,image/webp,image/jpeg,image/svg+xml" hidden></label>
+        <button class="knopf gefahr" id="ds-favicon-weg" type="button" hidden>Entfernen</button>
+      </div>
+      <p class="hinweis">Optional, für ein eigenes Symbol im Browser-Tab und auf dem Homescreen. Am besten quadratisch, z. B. 512 × 512 Pixel oder SVG. Ohne Favicon wird das Logo verwendet, ohne beides das Standard-Symbol.</p>
+    </div>
+  </section>
+
   <section id="tab-system" hidden>
+    <div class="flaeche karte-innen">
+      <h2>Datenquellen</h2>
+      <div id="quellen-text" class="hinweis" style="font-size:14px"></div>
+      <div class="zeile" style="margin-top:10px">
+        <button class="knopf primaer" id="abgleichen" type="button">Jetzt abgleichen</button>
+      </div>
+    </div>
     <div class="flaeche karte-innen">
       <h2>Automatische Recherche</h2>
       <div id="status-text" class="hinweis" style="font-size:14px"></div>
@@ -74,6 +113,15 @@
         <select id="pruef-spiel" style="max-width:240px"><option value="">Alle Spiele</option></select>
         <button class="knopf primaer" id="pruefen" type="button">Jetzt recherchieren</button>
       </div>
+      <div class="formular" style="margin-top:16px">
+        <label class="breit">Gefundene Vorschläge<select id="auto-modus"></select></label>
+        <label class="breit">Offizielle Quellen (eine Domain pro Zeile, Subdomains zählen mit)<textarea id="auto-domains" style="min-height:140px;font-family:ui-monospace,Menlo,monospace;font-size:13px"></textarea></label>
+      </div>
+      <div class="zeile" style="margin-top:8px">
+        <button class="knopf" id="auto-speichern" type="button">Einstellungen speichern</button>
+        <button class="knopf" id="auto-standard" type="button">Standardliste einsetzen</button>
+      </div>
+      <p class="hinweis">Bei „Offizielle Quellen“ wird ein Vorschlag nur dann automatisch übernommen, wenn seine Quelle auf einer dieser Domains liegt und er ein festes Tagesdatum hat; neue Sets zusätzlich nur mit Status „Bestätigt“. Alles andere bleibt unter „Vorschläge“ zur Prüfung. Jede Übernahme steht im Änderungsprotokoll.</p>
     </div>
     <div class="flaeche karte-innen">
       <h2>Benachrichtigungen</h2>
@@ -129,6 +177,7 @@ document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
   document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b));
   document.querySelectorAll("section[id^=tab-]").forEach(s => s.hidden = s.id !== "tab-" + b.dataset.tab);
   if (b.dataset.tab === "system") ladeStatus();
+  if (b.dataset.tab === "darstellung" || b.dataset.tab === "system") ladeEinstellungen();
 });
 
 function optionen(sel, obj) { sel.innerHTML = Object.entries(obj).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join(""); }
@@ -333,9 +382,72 @@ document.getElementById("import-los").onclick = async () => {
   } catch (e) { erg.textContent = e.message; }
 };
 
+// --- Darstellung --------------------------------------------------------------
+let EINST = null;
+function vorschau(id, url, leer) {
+  document.getElementById(id).innerHTML = url ? `<img src="${esc(url)}" alt="">` : esc(leer);
+}
+async function ladeEinstellungen() {
+  EINST = await api("/api/admin/einstellungen");
+  document.getElementById("ds-titel").value = EINST.titel;
+  document.getElementById("ds-untertitel").value = EINST.untertitel;
+  document.getElementById("ds-titel-zeigen").checked = EINST.titel_zeigen;
+  for (const art of ["logo", "favicon"]) {
+    vorschau(`ds-${art}-vorschau`, EINST[`${art}_url`], art === "logo" ? "kein Logo" : "Standard");
+    document.getElementById(`ds-${art}-weg`).hidden = !EINST[`${art}_url`];
+    document.getElementById(`ds-${art}-knopf`).textContent = EINST[`${art}_url`] ? "Ersetzen" : "Hochladen";
+  }
+  document.getElementById("auto-modus").innerHTML = Object.entries(EINST.auto_modi)
+    .map(([k, v]) => `<option value="${k}" ${k === EINST.auto_uebernahme ? "selected" : ""}>${esc(v)}</option>`).join("");
+  document.getElementById("auto-domains").value = EINST.offizielle_domains.join("\n");
+}
+document.getElementById("ds-speichern").onclick = async () => {
+  try {
+    await api("/api/admin/einstellungen", { method: "PUT", body: JSON.stringify({
+      titel: document.getElementById("ds-titel").value,
+      untertitel: document.getElementById("ds-untertitel").value,
+      titel_zeigen: document.getElementById("ds-titel-zeigen").checked }) });
+    toast("Gespeichert"); ladeEinstellungen();
+  } catch (e) { toast(e.message); }
+};
+for (const art of ["logo", "favicon"]) {
+  document.getElementById(`ds-${art}`).onchange = async (ev) => {
+    const datei = ev.target.files[0]; ev.target.value = ""; if (!datei) return;
+    if (datei.size > 1024 * 1024) { toast("Die Datei ist größer als 1 MB"); return; }
+    try {
+      await api(`/api/admin/darstellung/${art}`, { method: "PUT", body: datei, headers: { "Content-Type": datei.type || "application/octet-stream" } });
+      toast(art === "logo" ? "Logo gespeichert" : "Favicon gespeichert"); ladeEinstellungen();
+    } catch (e) { toast(e.message); }
+  };
+  document.getElementById(`ds-${art}-weg`).onclick = async () => {
+    await api(`/api/admin/darstellung/${art}`, { method: "DELETE" });
+    toast(art === "logo" ? "Logo entfernt" : "Favicon entfernt"); ladeEinstellungen();
+  };
+}
+document.getElementById("auto-speichern").onclick = async () => {
+  try {
+    await api("/api/admin/einstellungen", { method: "PUT", body: JSON.stringify({
+      auto_uebernahme: document.getElementById("auto-modus").value,
+      offizielle_domains: document.getElementById("auto-domains").value }) });
+    toast("Gespeichert"); ladeEinstellungen();
+  } catch (e) { toast(e.message); }
+};
+document.getElementById("auto-standard").onclick = () => {
+  document.getElementById("auto-domains").value = EINST.standard_domains.join("\n");
+  toast("Standardliste eingesetzt – noch speichern");
+};
+
 // --- System ------------------------------------------------------------------
 async function ladeStatus() {
   const s = await api("/api/admin/status");
+  const q = s.quellen;
+  document.getElementById("quellen-text").innerHTML = q.aktiv.length
+    ? `Aktiv: ${q.aktiv.map(x => esc(q.texte[x])).join(", ")}. Neue Sets und Terminänderungen werden alle ${q.intervall_stunden} Stunden automatisch übernommen.<br>
+       Letzter Abgleich: ${q.letzter_abgleich ? new Date(q.letzter_abgleich).toLocaleString("de-DE") : "noch nie"}<br>
+       ${q.laeuft ? "<strong>Abgleich läuft …</strong>" : (q.letzte_meldung ? "Ergebnis: " + esc(q.letzte_meldung) : "")}`
+    : "Aus. Mit <code>QUELLEN=scryfall,ygoprodeck</code> werden Magic und Yu-Gi-Oh! automatisch abgeglichen.";
+  document.getElementById("abgleichen").disabled = !q.aktiv.length || q.laeuft;
+  if (q.laeuft) setTimeout(() => { ladeStatus(); ladeTermine(); }, 4000);
   const el = document.getElementById("status-text");
   const n = s.benachrichtigungen;
   document.getElementById("notify-text").innerHTML = (n.discord || n.webhook)
@@ -352,6 +464,10 @@ async function ladeStatus() {
   document.getElementById("pruefen").disabled = s.laeuft;
   if (s.laeuft) setTimeout(() => { ladeStatus(); ladeVorschlaege(); }, 8000);
 }
+document.getElementById("abgleichen").onclick = async () => {
+  try { await api("/api/admin/quellen/abgleich", { method: "POST" }); toast("Abgleich gestartet"); setTimeout(ladeStatus, 500); }
+  catch (e) { toast(e.message); }
+};
 document.getElementById("pruefen").onclick = async () => {
   const sp = document.getElementById("pruef-spiel").value;
   try { await api("/api/admin/pruefen" + (sp ? "?spiel=" + sp : ""), { method: "POST" }); toast("Recherche gestartet"); setTimeout(ladeStatus, 500); }
@@ -373,7 +489,7 @@ async function ladeMeta() {
   renderSpiele();
 }
 async function allesLaden() { await ladeVorschlaege(); await ladeTermine(); }
-(async () => { await ladeMeta(); await allesLaden(); })();
+(async () => { await ladeMeta(); await allesLaden(); await ladeEinstellungen(); })();
 </script>
 </body>
 </html>

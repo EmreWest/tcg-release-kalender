@@ -552,7 +552,6 @@ function navigieren(richtung) {
     $("#inhalt").innerHTML = `<div class="flaeche leer">Die Termine konnten nicht geladen werden. Bitte Seite neu laden.</div>`;
     return;
   }
-  if (META.titel) { $("#seitentitel").textContent = META.titel; document.title = META.titel; }
   VORHER_BESUCH = speicherLesen("tcg-letzter-besuch");
   speicherSchreiben("tcg-letzter-besuch", new Date().toISOString().replace(/\.\d+Z$/, "Z"));
   if (window.matchMedia("(max-width: 900px)").matches) $("#filter-box").open = false;

@@ -9,7 +9,7 @@ import threading
 import time
 from datetime import date, datetime, timedelta, timezone
 
-from . import db
+from . import db, einstellungen
 
 log = logging.getLogger("tcg-kalender.checker")
 
@@ -48,7 +48,7 @@ Jedes Element:
     "status": "geruecht" | "angekuendigt" | "bestaetigt" | "verschoben" | "abgesagt",
     "notiz": "kurze Notiz auf Deutsch oder null"
   }},
-  "quelle": "URL der besten Quelle",
+  "quelle": "URL der besten Quelle – wenn möglich die offizielle Seite des Herstellers",
   "begruendung": "ein Satz auf Deutsch, was neu ist bzw. was sich geändert hat"
 }}
 Regeln:
@@ -113,9 +113,16 @@ def vorschlaege_einspielen(liste: list, herkunft: str) -> tuple[int, list[str]]:
                     raise ValueError(f"release_id {rid} existiert nicht")
                 daten.pop("spiel", None)
                 db._bereinigen(daten)
-            if db.vorschlag_anlegen(aktion, daten, int(rid) if rid else None,
-                                    v.get("begruendung"), v.get("quelle"), herkunft):
+            vid = db.vorschlag_anlegen(aktion, daten, int(rid) if rid else None,
+                                       v.get("begruendung"), v.get("quelle"), herkunft)
+            if vid:
                 angelegt += 1
+                if herkunft.startswith("claude") and einstellungen.automatisch_uebernehmen(aktion, daten, v.get("quelle")):
+                    try:
+                        db.vorschlag_entscheiden(vid, True)
+                        status["automatisch"] = status.get("automatisch", 0) + 1
+                    except Exception as e:  # noqa: BLE001
+                        log.warning("Automatische Übernahme von Vorschlag %s fehlgeschlagen: %s", vid, e)
         except Exception as e:  # noqa: BLE001
             fehler.append(f"Eintrag {i + 1}: {e}")
     return angelegt, fehler
@@ -131,9 +138,15 @@ def pruefen(nur_spiel: str | None = None) -> str:
         import anthropic
         client = anthropic.Anthropic(api_key=API_KEY)
         gesamt, meldungen = 0, []
+        status["automatisch"] = 0
+        from . import quellen
+        per_api = {"magic"} if "scryfall" in quellen.AKTIV else set()
+        per_api |= {"yugioh"} if "ygoprodeck" in quellen.AKTIV else set()
         for s in db.spiele():
             if nur_spiel and s["id"] != nur_spiel:
                 continue
+            if not nur_spiel and s["id"] in per_api:
+                continue  # kommt bereits über eine Daten-API
             try:
                 text = _anfrage(client, PROMPT.format(
                     heute=date.today().isoformat(), spiel_name=s["name"],
@@ -146,7 +159,9 @@ def pruefen(nur_spiel: str | None = None) -> str:
                 log.exception("Prüfung für %s fehlgeschlagen", s["id"])
                 meldungen.append(f"{s['name']}: Fehler – {e}")
         db.meta_set("letzte_pruefung", datetime.now(timezone.utc).isoformat())
-        msg = f"{gesamt} neue Vorschläge." + (" " + " | ".join(meldungen) if meldungen else "")
+        auto = status.get("automatisch", 0)
+        msg = f"{gesamt} neue Vorschläge" + (f", davon {auto} automatisch übernommen." if auto else ".") \
+            + (" " + " | ".join(meldungen) if meldungen else "")
         status["letzte_meldung"] = msg
         return msg
     finally:

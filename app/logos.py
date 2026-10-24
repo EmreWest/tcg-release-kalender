@@ -49,13 +49,20 @@ def _typ_pruefen(inhalt: bytes, medientyp: str) -> str:
     return endung
 
 
-def speichern(spiel_id: str, inhalt: bytes, medientyp: str) -> str:
+def datei_speichern(praefix: str, inhalt: bytes, medientyp: str) -> str:
+    """Prüft und speichert eine Bilddatei, gibt den Dateinamen (mit Inhalts-Hash) zurück."""
     endung = _typ_pruefen(inhalt, medientyp)
-    datei = f"{spiel_id}-{hashlib.sha256(inhalt).hexdigest()[:12]}.{endung}"
+    datei = f"{praefix}-{hashlib.sha256(inhalt).hexdigest()[:12]}.{endung}"
     ziel = os.path.join(verzeichnis(), datei)
     with open(ziel + ".tmp", "wb") as f:
         f.write(inhalt)
     os.replace(ziel + ".tmp", ziel)
+    return datei
+
+
+def speichern(spiel_id: str, inhalt: bytes, medientyp: str) -> str:
+    datei = datei_speichern(spiel_id, inhalt, medientyp)
+    ziel = os.path.join(verzeichnis(), datei)
     try:
         alt = db.spiel_logo_setzen(spiel_id, datei)
     except KeyError:

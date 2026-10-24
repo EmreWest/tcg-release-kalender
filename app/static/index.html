@@ -3,19 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TCG-Release-Kalender</title>
-<meta name="description" content="Kommende Sets für Sammelkartenspiele – filtern und als Kalender abonnieren.">
+<title>{{TITEL}}</title>
+<meta name="description" content="{{UNTERTITEL}}">
 <link rel="alternate" type="application/atom+xml" title="Änderungen" href="/feed.xml">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='5' width='26' height='24' rx='4' fill='%232a55c9'/><rect x='3' y='5' width='26' height='7' rx='3' fill='%231a3a91'/><rect x='8' y='16' width='6' height='8' rx='1.5' fill='%23fff'/><rect x='17' y='16' width='6' height='8' rx='1.5' fill='%23fff' opacity='.6'/></svg>">
+<link rel="icon" type="{{FAVICON_TYP}}" href="{{FAVICON}}">
+<link rel="apple-touch-icon" href="{{FAVICON}}">
 <link rel="stylesheet" href="/static/style.css">
 <script src="/static/theme.js"></script>
 </head>
 <body>
 <div class="wrap">
   <header class="kopf">
-    <div>
-      <h1 id="seitentitel">TCG-Release-Kalender</h1>
-      <p class="unter">Kommende Sets für Deutschland und die EU – filtern, anschauen, als Kalender abonnieren.</p>
+    <div class="marke">
+      {{KOPF_LOGO}}
+      <div>
+        <h1 id="seitentitel" class="{{TITEL_KLASSE}}">{{TITEL}}</h1>
+        <p class="unter">{{UNTERTITEL}}</p>
+      </div>
     </div>
     <div class="kopf-rechts">
       <div class="segment" role="group" aria-label="Ansicht">
