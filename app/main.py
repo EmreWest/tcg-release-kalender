@@ -15,11 +15,11 @@ from . import atom, checker, db, ics, notify
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("tcg-kalender")
 
-ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
+ADMIN_USER = (os.environ.get("ADMIN_USER") or "admin")
 ADMIN_PASSWORT = os.environ.get("ADMIN_PASSWORT", "")
-UID_DOMAIN = os.environ.get("UID_DOMAIN", "tcg-kalender.local")
+UID_DOMAIN = (os.environ.get("UID_DOMAIN") or "tcg-kalender.local")
 OEFFENTLICHE_URL = os.environ.get("OEFFENTLICHE_URL", "").rstrip("/")
-SEITENTITEL = os.environ.get("SEITENTITEL", "TCG-Release-Kalender")
+SEITENTITEL = (os.environ.get("SEITENTITEL") or "TCG-Release-Kalender")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
 

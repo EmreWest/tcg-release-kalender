@@ -14,11 +14,11 @@ from . import db
 log = logging.getLogger("tcg-kalender.checker")
 
 API_KEY = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-MODELL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
-WEBSEARCH_TOOL = os.environ.get("CLAUDE_WEBSEARCH_TOOL", "web_search_20250305")
-MAX_SUCHEN = int(os.environ.get("CLAUDE_MAX_SUCHEN_PRO_SPIEL", "6"))
-INTERVALL_TAGE = float(os.environ.get("CHECK_INTERVALL_TAGE", "7"))
-CHECK_STUNDE = int(os.environ.get("CHECK_STUNDE", "6"))
+MODELL = (os.environ.get("CLAUDE_MODEL") or "claude-sonnet-5-5")
+WEBSEARCH_TOOL = (os.environ.get("CLAUDE_WEBSEARCH_TOOL") or "web_search_20250305")
+MAX_SUCHEN = int((os.environ.get("CLAUDE_MAX_SUCHEN_PRO_SPIEL") or "6"))
+INTERVALL_TAGE = float((os.environ.get("CHECK_INTERVALL_TAGE") or "7"))
+CHECK_STUNDE = int((os.environ.get("CHECK_STUNDE") or "6"))
 
 _lock = threading.Lock()
 status = {"laeuft": False, "letzte_meldung": None}

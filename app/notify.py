@@ -13,7 +13,7 @@ log = logging.getLogger("tcg-kalender.notify")
 DISCORD_URL = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "").strip()
 WEBHOOK_SPIELE = {s.strip() for s in os.environ.get("WEBHOOK_SPIELE", "").split(",") if s.strip()}
-WEBHOOK_ARTEN = {s.strip() for s in os.environ.get("WEBHOOK_ARTEN", "neu,verschoben,geaendert,geloescht").split(",")
+WEBHOOK_ARTEN = {s.strip() for s in (os.environ.get("WEBHOOK_ARTEN") or "neu,verschoben,geaendert,geloescht").split(",")
                  if s.strip()}
 BASIS_URL = os.environ.get("OEFFENTLICHE_URL", "").rstrip("/")
 

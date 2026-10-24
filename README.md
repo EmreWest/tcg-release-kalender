@@ -23,11 +23,12 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 
 Ein fertiges Image für amd64 und arm64 (z. B. Raspberry Pi) liegt in der GitHub Container Registry. Es muss nichts selbst gebaut werden.
 
+1. Einen Ordner anlegen, z. B. `tcg-kalender`.
+2. Darin die beiden Dateien unten anlegen: `docker-compose.yml` und `.env`.
+3. In der `.env` mindestens `ADMIN_PASSWORT` setzen.
+4. Starten:
+
 ```bash
-mkdir tcg-kalender && cd tcg-kalender
-curl -O https://raw.githubusercontent.com/EmreWest/tcg-release-kalender/main/docker-compose.yml
-curl -o .env https://raw.githubusercontent.com/EmreWest/tcg-release-kalender/main/.env.example
-# .env öffnen und mindestens ADMIN_PASSWORT setzen
 docker compose up -d
 ```
 
@@ -36,9 +37,55 @@ Danach:
 - Kalender: `http://<server>:8085/`
 - Verwaltung: `http://<server>:8085/admin` (Benutzer und Passwort aus der `.env`)
 
+### docker-compose.yml
+
+```yaml
+services:
+  tcg-kalender:
+    image: ghcr.io/emrewest/tcg-release-kalender:latest
+    container_name: tcg-kalender
+    restart: unless-stopped
+    ports:
+      - "8085:8000"
+    volumes:
+      - ./data:/data
+    env_file: .env
+```
+
+Den Port links (`8085`) nach Bedarf anpassen.
+
+### .env
+
+```env
+# Einstellungen für den TCG-Release-Kalender
+ADMIN_USER=admin
+ADMIN_PASSWORT=hier-ein-langes-passwort
+
+# Öffentliche Adresse der Seite, z. B. https://kalender.example.org (leer = automatisch)
+OEFFENTLICHE_URL=
+# Domain für die IDs der Kalendereinträge – nach dem ersten Abo nicht mehr ändern
+UID_DOMAIN=tcg-kalender.local
+SEITENTITEL=TCG-Release-Kalender
+
+# Optional: automatische Recherche mit Claude
+ANTHROPIC_API_KEY=
+CLAUDE_MODEL=claude-sonnet-5-5
+CHECK_INTERVALL_TAGE=7
+CHECK_STUNDE=6
+CLAUDE_MAX_SUCHEN_PRO_SPIEL=6
+
+# Optional: Benachrichtigungen bei Änderungen
+DISCORD_WEBHOOK_URL=
+WEBHOOK_URL=
+WEBHOOK_SPIELE=
+WEBHOOK_ARTEN=neu,verschoben,geaendert,geloescht
+```
+
+Leere Werte bedeuten „aus“. Was die einzelnen Einstellungen bewirken, steht unter [Konfiguration](#konfiguration).
+
 Die Daten liegen in `./data/kalender.db` (SQLite). Beim ersten Start wird eine Liste aktueller Termine eingespielt; danach wird sie nie wieder überschrieben.
 
-Ohne Compose:
+### Ohne Compose
 
 ```bash
 docker run -d --name tcg-kalender -p 8085:8000 -v "$PWD/data:/data" \
