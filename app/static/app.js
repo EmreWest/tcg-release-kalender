@@ -243,7 +243,7 @@ function karte(e) {
   const datum = ca
     ? `<div class="datum-block"><div class="ca">${esc(ca.replace(/ \d{4}$/, ""))}</div></div>`
     : `<div class="datum-block"><div class="tag">${String(d.getDate()).padStart(2, "0")}</div><div class="wt">${WT_KURZ[d.getDay()]}</div></div>`;
-  const meta = [`<span class="spielname">${logo(r.spiel, "logo-klein")}${esc(r.spiel_name)}</span>`, `<span>${esc(e.pre ? "Prerelease" : META.typen[r.typ])}</span>`];
+  const meta = e.pre ? [] : [`<span>${esc(META.typen[r.typ])}</span>`];
   if (!e.pre && r.prerelease) meta.push(`<span>Prerelease ${fmt(r.prerelease)}</span>`);
   if (e.pre) meta.push(`<span>Release ${fmt(r.datum)}</span>`);
   if (r.vorheriges_datum && r.status === "verschoben") meta.push(`<span>vorher ${fmt(r.vorheriges_datum)}</span>`);
@@ -251,8 +251,9 @@ function karte(e) {
   return `<button type="button" class="eintrag${r.status_effektiv === "erschienen" && !e.pre ? " vergangen" : ""}" style="--c:${farbe(r.spiel_farbe)}" data-r="${r.id}">
     ${datum}
     <div>
-      <div class="titelzeile"><span class="name">${e.pre ? "Prerelease: " : ""}${esc(r.name)}</span>${r.code ? `<span class="code">${esc(r.code)}</span>` : ""}
+      <div class="titelzeile"><span class="spiel">${logo(r.spiel, "logo-titel")}${esc(r.spiel_name)}</span>
         <span class="badge ${r.status_effektiv}">${esc(META.status[r.status_effektiv])}</span>${markierung(r)}</div>
+      <div class="setzeile"><span class="name">${e.pre ? "Prerelease: " : ""}${esc(r.name)}</span>${r.code ? `<span class="code">${esc(r.code)}</span>` : ""}</div>
       <div class="meta">${meta.join("")}</div>
       ${r.notiz && !e.pre ? `<div class="notiz">${esc(r.notiz)}</div>` : ""}
     </div>
@@ -367,8 +368,9 @@ function wocheRendern() {
     const liste = tage.get(t) || [];
     html += `<div class="woche-tag${t === h ? " heute" : ""}">
       <div class="kopf-zeile"><b>${d.getDate()}</b><span>${WT_KURZ[d.getDay()]}</span></div>
-      <div class="inhalt">${liste.length ? liste.map((e) => pille(e).replace("</span></button>",
-        `</span><small>${logo(e.r.spiel, "logo-mini")}${esc(e.r.spiel_name)}${e.pre ? "" : " · " + esc(META.typen[e.r.typ])}</small></button>`)).join("")
+      <div class="inhalt">${liste.length ? liste.map((e) => pille(e).replace('"><span>',
+        `"><b class="woche-spiel">${logo(e.r.spiel, "logo-mini")}${esc(e.r.spiel_name)}</b><span>`).replace("</span></button>",
+        `</span>${e.pre ? "" : `<small>${esc(META.typen[e.r.typ])}</small>`}</button>`)).join("")
         : `<span class="frei">–</span>`}</div>
     </div>`;
   }
