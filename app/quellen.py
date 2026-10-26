@@ -1,4 +1,5 @@
-"""Abgleich mit offenen Daten-APIs: Scryfall (Magic) und YGOPRODeck (Yu-Gi-Oh!).
+"""Abgleich mit offenen Daten-APIs: Scryfall (Magic), YGOPRODeck (Yu-Gi-Oh!), SWU-DB (Star Wars: Unlimited),
+The FaB Cube (Flesh and Blood) und TCGdex (Pokémon, deutsche Ausgaben).
 
 Regeln:
 - Neue Sets werden automatisch angelegt.
@@ -15,12 +16,10 @@ import time
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 
-from . import db
+from . import db, einstellungen
 
 log = logging.getLogger("tcg-kalender.quellen")
 
-AKTIV = {q.strip() for q in (os.environ.get("QUELLEN") if os.environ.get("QUELLEN") is not None
-                             else "scryfall,ygoprodeck").split(",") if q.strip()}
 INTERVALL_STUNDEN = float(os.environ.get("QUELLEN_INTERVALL_STUNDEN") or "12")
 USER_AGENT = "tcg-release-kalender/1.0 (+https://github.com/EmreWest/tcg-release-kalender)"
 
@@ -116,8 +115,156 @@ def ygoprodeck(ab: str) -> list[dict]:
     return sets
 
 
-QUELLEN = {"scryfall": scryfall, "ygoprodeck": ygoprodeck}
-QUELLEN_TEXT = {"scryfall": "Scryfall (Magic)", "ygoprodeck": "YGOPRODeck (Yu-Gi-Oh!)"}
+def _us_datum(text: str) -> str | None:
+    """'11/20/26' bzw. '11/20/2026' -> '2026-11-20'"""
+    m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{2}|\d{4})", (text or "").strip())
+    if not m:
+        return None
+    monat, tag, jahr = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    if jahr < 100:
+        jahr += 2000
+    try:
+        return date(jahr, monat, tag).isoformat()
+    except ValueError:
+        return None
+
+
+_SWU_AUSSCHLUSS = re.compile(r"promo|judge|exclusive|convention|gamegenic|costco|gift box|showdown|prize|event", re.I)
+
+
+def swudb(ab: str) -> list[dict]:
+    daten = _laden("https://api.swu-db.com/sets")
+    sets = []
+    for s in daten:
+        d = _us_datum(s.get("releaseDate"))
+        name = s.get("fullName") or ""
+        if not d or d < ab or s.get("parentSetId") or _SWU_AUSSCHLUSS.search(name):
+            continue
+        n = name.lower()
+        typ = "deck" if re.search(r"twin suns|intro battle|starter|deck", n) else (
+            "spezialset" if "icons" in n else "hauptset")
+        sets.append({
+            "extern_id": f"swudb:{s['setId']}",
+            "spiel": "swu",
+            "name": name,
+            "code": s["setId"],
+            "typ": typ,
+            "datum": d,
+            "quelle": "https://www.swu-db.com/sets",
+            "notiz": "Termin laut SWU-DB (weltweiter Release).",
+        })
+    return sets
+
+
+_FAB_AUSSCHLUSS = re.compile(
+    r"promo|token|prize|judge|pro tour|calling|world|nationals|battle hardened|skirmish|armory event|"
+    r"gem pack|launch|playmat|sleeve|life counter|redemption|marvel|cold foil|xxx", re.I)
+
+
+def _fab_typ(name: str) -> str:
+    n = name.lower()
+    if re.search(r"blitz deck|armory deck|demo deck|hero deck|silver age deck|starter|\bdeck\b", n):
+        return "deck"
+    if re.search(r"mastery pack|history pack|compendium|round the table|collection|box|anthology", n):
+        return "spezialset"
+    return "hauptset"
+
+
+def fabcube(ab: str) -> list[dict]:
+    daten = _laden("https://raw.githubusercontent.com/the-fab-cube/flesh-and-blood-cards/develop/json/english/set.json")
+    sets = []
+    for s in daten:
+        if _FAB_AUSSCHLUSS.search(s.get("name", "")):
+            continue
+        termine = [p for p in s.get("printings", []) if p.get("initial_release_date")]
+        if not termine:
+            continue
+        erster = min(termine, key=lambda p: p["initial_release_date"])
+        d = erster["initial_release_date"][:10]
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) or d < ab:
+            continue
+        quelle = erster.get("product_page") or erster.get("card_database") or "https://fabtcg.com/"
+        sets.append({
+            "extern_id": f"fabcube:{s['id']}",
+            "spiel": "fab",
+            "name": s["name"],
+            "code": s["id"],
+            "typ": _fab_typ(s["name"]),
+            "datum": d,
+            "quelle": quelle if quelle.startswith("https://") else "https://fabtcg.com/",
+            "notiz": "Termin laut The FaB Cube (weltweiter Release).",
+        })
+    return sets
+
+
+_TCGDEX_AUSSCHLUSS = re.compile(r"promo|mcdonald|trainer kit|pokémon go|pocket|energ", re.I)
+
+
+def tcgdex(ab: str) -> list[dict]:
+    """Deutsche Pokémon-Sets mit deutschem Erscheinungsdatum. Neue Sets erscheinen dort meist kurz vor Release."""
+    de = _laden("https://api.tcgdex.net/v2/de/sets")
+    try:
+        en = {s["id"]: s["name"] for s in _laden("https://api.tcgdex.net/v2/en/sets")}
+    except Exception:  # noqa: BLE001
+        en = {}
+    sets = []
+    for s in de[-15:]:  # Liste ist chronologisch, für kommende Sets reichen die letzten Einträge
+        try:
+            detail = _laden(f"https://api.tcgdex.net/v2/de/sets/{s['id']}")
+        except Exception:  # noqa: BLE001
+            continue
+        d = (detail.get("releaseDate") or "")[:10]
+        name_de = detail.get("name") or s.get("name") or ""
+        name_en = en.get(s["id"]) or name_de
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) or d < ab:
+            continue
+        if _TCGDEX_AUSSCHLUSS.search(f"{name_de} {name_en} {s['id']}") or s["id"].endswith(("p", "-p")):
+            continue
+        offiziell = (detail.get("cardCount") or {}).get("official") or 0
+        typ = "hauptset" if offiziell >= 80 and not s["id"].endswith("-c") else "spezialset"
+        sets.append({
+            "extern_id": f"tcgdex:{s['id']}",
+            "spiel": "pokemon",
+            "name": name_en,
+            "code": s["id"].upper(),
+            "typ": typ,
+            "datum": d,
+            "quelle": "https://tcgdex.dev/",
+            "notiz": f"Deutsche Ausgabe: „{name_de}“. Termin laut TCGdex." if name_de != name_en
+                     else "Termin laut TCGdex (deutsche Ausgabe).",
+        })
+    return sets
+
+
+QUELLEN = {
+    "scryfall": {"funktion": scryfall, "text": "Scryfall (Magic)", "spiel": "magic"},
+    "ygoprodeck": {"funktion": ygoprodeck, "text": "YGOPRODeck (Yu-Gi-Oh!)", "spiel": "yugioh"},
+    "swudb": {"funktion": swudb, "text": "SWU-DB (Star Wars: Unlimited)", "spiel": "swu"},
+    "fabcube": {"funktion": fabcube, "text": "The FaB Cube (Flesh and Blood)", "spiel": "fab"},
+    "tcgdex": {"funktion": tcgdex, "text": "TCGdex (Pokémon, deutsche Ausgaben)", "spiel": "pokemon"},
+}
+QUELLEN_TEXT = {k: v["text"] for k, v in QUELLEN.items()}
+# Spiele, bei denen die Datenquelle kommende Sets zuverlässig früh genug kennt – dort spart sich die
+# Claude-Recherche den Aufwand. TCGdex listet neue Sets erst kurz vor Release, Pokémon bleibt daher drin.
+VOLLSTAENDIG = {"scryfall", "ygoprodeck", "swudb", "fabcube"}
+
+
+def _standard_aktiv() -> set[str]:
+    wert = os.environ.get("QUELLEN")
+    if wert is None or wert.strip().lower() == "alle":
+        return set(QUELLEN)
+    return {q.strip() for q in wert.split(",") if q.strip()} & set(QUELLEN)
+
+
+def aktive() -> set[str]:
+    gewaehlt = einstellungen.lesen().get("quellen_aktiv")
+    if gewaehlt is None:
+        return _standard_aktiv()
+    return set(gewaehlt) & set(QUELLEN)
+
+
+def spiele_mit_quelle() -> set[str]:
+    return {QUELLEN[q]["spiel"] for q in aktive() if q in VOLLSTAENDIG}
 
 
 # --- Abgleich ------------------------------------------------------------------
@@ -202,11 +349,12 @@ def abgleichen(nur: str | None = None) -> str:
     try:
         ab = (date.today() - timedelta(days=30)).isoformat()
         teile = []
-        for name, funktion in QUELLEN.items():
-            if name not in AKTIV or (nur and nur != name):
+        aktiv = aktive()
+        for name, q in QUELLEN.items():
+            if name not in aktiv or (nur and nur != name):
                 continue
             try:
-                e = abgleich_spiel(funktion(ab))
+                e = abgleich_spiel(q["funktion"](ab))
                 teile.append(f"{QUELLEN_TEXT[name]}: {e['neu']} neu, {e['geaendert']} aktualisiert")
             except Exception as ex:  # noqa: BLE001
                 log.exception("Abgleich mit %s fehlgeschlagen", name)
@@ -224,8 +372,9 @@ def abgleichen(nur: str | None = None) -> str:
 
 def info() -> dict:
     return {
-        "aktiv": sorted(AKTIV & set(QUELLEN)),
+        "aktiv": sorted(aktive()),
         "texte": QUELLEN_TEXT,
+        "alle": [{"id": k, "text": v["text"], "spiel": v["spiel"]} for k, v in QUELLEN.items()],
         "intervall_stunden": INTERVALL_STUNDEN,
         "laeuft": status["laeuft"],
         "letzter_abgleich": db.meta_get("letzter_abgleich"),
@@ -234,7 +383,7 @@ def info() -> dict:
 
 
 def starte_hintergrund():
-    if not (AKTIV & set(QUELLEN)) or INTERVALL_STUNDEN <= 0:
+    if INTERVALL_STUNDEN <= 0:
         log.info("Datenquellen-Abgleich deaktiviert.")
         return
 
@@ -248,7 +397,7 @@ def starte_hintergrund():
         time.sleep(15)
         while True:
             try:
-                if faellig():
+                if aktive() and faellig():
                     abgleichen()
             except Exception:  # noqa: BLE001
                 log.exception("Geplanter Abgleich fehlgeschlagen")

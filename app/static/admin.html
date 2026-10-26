@@ -126,8 +126,11 @@
   <section id="tab-system" hidden>
     <div class="flaeche karte-innen">
       <h2>Datenquellen</h2>
+      <p class="hinweis" style="margin-top:0">Offene Daten-APIs, die automatisch abgeglichen werden. Neue Sets und Terminänderungen werden direkt übernommen.</p>
+      <div id="quellen-liste" style="margin:10px 0"></div>
       <div id="quellen-text" class="hinweis" style="font-size:14px"></div>
       <div class="zeile" style="margin-top:10px">
+        <button class="knopf" id="quellen-speichern" type="button">Auswahl speichern</button>
         <button class="knopf primaer" id="abgleichen" type="button">Jetzt abgleichen</button>
       </div>
     </div>
@@ -494,11 +497,16 @@ document.getElementById("auto-standard").onclick = () => {
 async function ladeStatus() {
   const s = await api("/api/admin/status");
   const q = s.quellen;
+  const liste = document.getElementById("quellen-liste");
+  if (!liste.dataset.geladen || !q.laeuft) {
+    liste.innerHTML = q.alle.map(x => `<label class="schalter"><input type="checkbox" data-quelle="${esc(x.id)}" ${q.aktiv.includes(x.id) ? "checked" : ""}>
+      ${esc(x.text)}${META.spiele.some(sp => sp.id === x.spiel) ? "" : ' <span class="hinweis" style="margin:0">(Spiel nicht angelegt)</span>'}</label>`).join("");
+    liste.dataset.geladen = "1";
+  }
   document.getElementById("quellen-text").innerHTML = q.aktiv.length
-    ? `Aktiv: ${q.aktiv.map(x => esc(q.texte[x])).join(", ")}. Neue Sets und Terminänderungen werden alle ${q.intervall_stunden} Stunden automatisch übernommen.<br>
-       Letzter Abgleich: ${q.letzter_abgleich ? new Date(q.letzter_abgleich).toLocaleString("de-DE") : "noch nie"}<br>
+    ? `Abgleich alle ${q.intervall_stunden} Stunden. Letzter Abgleich: ${q.letzter_abgleich ? new Date(q.letzter_abgleich).toLocaleString("de-DE") : "noch nie"}<br>
        ${q.laeuft ? "<strong>Abgleich läuft …</strong>" : (q.letzte_meldung ? "Ergebnis: " + esc(q.letzte_meldung) : "")}`
-    : "Aus. Mit <code>QUELLEN=scryfall,ygoprodeck</code> werden Magic und Yu-Gi-Oh! automatisch abgeglichen.";
+    : "Alle Datenquellen sind ausgeschaltet.";
   document.getElementById("abgleichen").disabled = !q.aktiv.length || q.laeuft;
   if (q.laeuft) setTimeout(() => { ladeStatus(); ladeTermine(); }, 4000);
   const el = document.getElementById("status-text");
@@ -517,6 +525,13 @@ async function ladeStatus() {
   document.getElementById("pruefen").disabled = s.laeuft;
   if (s.laeuft) setTimeout(() => { ladeStatus(); ladeVorschlaege(); }, 8000);
 }
+document.getElementById("quellen-speichern").onclick = async () => {
+  const aktiv = [...document.querySelectorAll("[data-quelle]")].filter(x => x.checked).map(x => x.dataset.quelle);
+  try {
+    await api("/api/admin/einstellungen", { method: "PUT", body: JSON.stringify({ quellen_aktiv: aktiv }) });
+    toast("Gespeichert"); ladeStatus();
+  } catch (e) { toast(e.message); }
+};
 document.getElementById("abgleichen").onclick = async () => {
   try { await api("/api/admin/quellen/abgleich", { method: "POST" }); toast("Abgleich gestartet"); setTimeout(ladeStatus, 500); }
   catch (e) { toast(e.message); }

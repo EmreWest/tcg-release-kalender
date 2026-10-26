@@ -86,15 +86,15 @@ def test_verschieben_protokoll_und_feed(client):
 
 
 def test_spiele_verwalten(client):
-    assert client.post("/api/admin/spiele", json={"id": "fab", "name": "Flesh and Blood", "farbe": "#123456"},
+    assert client.post("/api/admin/spiele", json={"id": "testspiel", "name": "Testspiel", "farbe": "#123456"},
                        auth=ADMIN, headers=H).status_code == 200
-    assert client.post("/api/admin/spiele", json={"id": "fab", "name": "Doppelt", "farbe": "#123456"},
+    assert client.post("/api/admin/spiele", json={"id": "testspiel", "name": "Doppelt", "farbe": "#123456"},
                        auth=ADMIN, headers=H).status_code == 400
-    assert client.put("/api/admin/spiele/fab", json={"farbe": "falsch"}, auth=ADMIN, headers=H).status_code == 400
-    assert client.put("/api/admin/spiele/fab", json={"farbe": "#abcdef"}, auth=ADMIN, headers=H).status_code == 200
+    assert client.put("/api/admin/spiele/testspiel", json={"farbe": "falsch"}, auth=ADMIN, headers=H).status_code == 400
+    assert client.put("/api/admin/spiele/testspiel", json={"farbe": "#abcdef"}, auth=ADMIN, headers=H).status_code == 200
     # Spiele mit Terminen lassen sich nicht löschen
     assert client.delete("/api/admin/spiele/pokemon", auth=ADMIN, headers=H).status_code == 400
-    assert client.delete("/api/admin/spiele/fab", auth=ADMIN, headers=H).status_code == 200
+    assert client.delete("/api/admin/spiele/testspiel", auth=ADMIN, headers=H).status_code == 200
 
 
 def test_import_und_vorschlag(client):
@@ -217,8 +217,9 @@ def test_datenquellen_abgleich(client, monkeypatch):
             {"extern_id": "ygoprodeck:NEU1", "spiel": "yugioh", "name": "Ganz Neues Set", "code": "NEU1",
              "typ": "spezialset", "datum": "2027-02-11", "quelle": "https://ygoprodeck.com/", "notiz": "x"},
         ]
-    monkeypatch.setattr(quellen, "QUELLEN", {"ygoprodeck": falsche_quelle})
-    monkeypatch.setattr(quellen, "AKTIV", {"ygoprodeck"})
+    monkeypatch.setattr(quellen, "QUELLEN", {"ygoprodeck": {"funktion": falsche_quelle, "text": "YGOPRODeck (Yu-Gi-Oh!)",
+                                                             "spiel": "yugioh"}})
+    monkeypatch.setattr(quellen, "aktive", lambda: {"ygoprodeck"})
 
     assert "1 neu, 1 aktualisiert" in quellen.abgleichen()
     rows = {r["name"]: r for r in client.get("/api/releases?spiele=yugioh&rueckblick=3650").json()}
@@ -281,3 +282,66 @@ def test_formatieren_ohne_html():
     html_text = rechtliches.formatieren('<script>alert(1)</script>\n## <img src=x onerror=1>\njavascript:alert(1)')
     assert "<script>" not in html_text and "<img" not in html_text
     assert 'href="javascript' not in html_text
+
+
+def test_neue_spiele_fuer_bestehende_installation(client):
+    ids = {s["id"] for s in client.get("/api/meta").json()["spiele"]}
+    assert {"fab", "unionarena", "hololive", "cyberpunk"} <= ids
+    # Zustand einer Installation von Version 1 nachbauen
+    with db.verbindung() as con:
+        con.execute("DELETE FROM releases WHERE spiel IN ('fab','unionarena','weiss','vanguard','shadowverse',"
+                    "'hololive','fftcg','sorcery','grandarchive','cyberpunk')")
+        con.execute("DELETE FROM spiele WHERE id IN ('fab','unionarena','weiss','vanguard','shadowverse',"
+                    "'hololive','fftcg','sorcery','grandarchive','cyberpunk')")
+    db.meta_set("seed_version", "1")
+    db.init()
+    ids = {s["id"] for s in db.spiele()}
+    assert "fab" in ids and "cyberpunk" in ids
+    assert any(r["name"] == "Outbreak" for r in db.releases(spiele_filter=["fab"]))
+    # Danach gelöschte Spiele kommen nicht wieder
+    with db.verbindung() as con:
+        con.execute("DELETE FROM releases WHERE spiel = 'weiss'")
+        con.execute("DELETE FROM spiele WHERE id = 'weiss'")
+    db.init()
+    assert "weiss" not in {s["id"] for s in db.spiele()}
+
+
+def test_einstellungen_speichern_nur_abweichungen(client):
+    import json as _json
+    from app import einstellungen
+    client.put("/api/admin/einstellungen", json={"titel": "Eigener Titel"}, auth=ADMIN, headers=H)
+    gespeichert = _json.loads(db.meta_get("einstellungen"))
+    assert gespeichert == {"titel": "Eigener Titel"}
+    # Eine früher eingefrorene alte Domainliste wird durch die aktuelle ersetzt
+    db.meta_set("einstellungen", _json.dumps({"offizielle_domains": einstellungen._DOMAINS_V1}))
+    assert "fabtcg.com" in einstellungen.lesen()["offizielle_domains"]
+
+
+def test_quellen_umschalten(client):
+    from app import quellen
+    client.put("/api/admin/einstellungen", json={"quellen_aktiv": ["swudb", "unbekannt"]}, auth=ADMIN, headers=H)
+    assert quellen.aktive() == {"swudb"}
+    assert quellen.spiele_mit_quelle() == {"swu"}
+    assert client.put("/api/admin/einstellungen", json={"quellen_aktiv": "swudb"}, auth=ADMIN, headers=H).status_code == 400
+
+
+def test_quellen_parser(monkeypatch):
+    from app import quellen
+    assert quellen._us_datum("11/20/26") == "2026-11-20" and quellen._us_datum("2/30/26") is None
+    monkeypatch.setattr(quellen, "_laden", lambda url: [
+        {"fullName": "Icons 2027", "isBaseSet": True, "releaseDate": "11/20/26", "setId": "IC27"},
+        {"fullName": "Homeworlds - OP Promo", "setId": "HMWP", "parentSetId": "HMW", "releaseDate": "11/20/26"},
+        {"fullName": "Costco Exclusive", "setId": "CST", "releaseDate": "12/15/26"},
+        {"fullName": "Twin Suns 2027", "isBaseSet": True, "releaseDate": "5/7/27", "setId": "TS27"},
+    ])
+    sets = {s["code"]: s for s in quellen.swudb("2026-10-01")}
+    assert set(sets) == {"IC27", "TS27"} and sets["IC27"]["typ"] == "spezialset" and sets["TS27"]["typ"] == "deck"
+    monkeypatch.setattr(quellen, "_laden", lambda url: [
+        {"id": "OBK", "name": "Outbreak", "printings": [{"initial_release_date": "2027-02-12T00:00:00.000Z",
+                                                         "product_page": "https://fabtcg.com/products/booster-set/obk/"}]},
+        {"id": "AMO", "name": "Armory Deck - Dr. Mortimer", "printings": [{"initial_release_date": "2026-11-14T00:00:00.000Z"}]},
+        {"id": "XXX", "name": "OP Event Tokens", "printings": [{"initial_release_date": "2026-12-01T00:00:00.000Z"}]},
+        {"id": "WTR", "name": "Welcome to Rathe", "printings": [{"initial_release_date": "2019-10-11T00:00:00.000Z"}]},
+    ])
+    sets = {s["code"]: s for s in quellen.fabcube("2026-10-01")}
+    assert set(sets) == {"OBK", "AMO"} and sets["AMO"]["typ"] == "deck" and sets["OBK"]["typ"] == "hauptset"

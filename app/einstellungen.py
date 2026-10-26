@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 
 from . import db
 
-STANDARD_DOMAINS = [
+_DOMAINS_V1 = [
     "pokemon.com", "pokemon.de", "pokemoncenter.com",
     "onepiece-cardgame.com",
     "wizards.com", "magic.wizards.com",
@@ -17,6 +17,16 @@ STANDARD_DOMAINS = [
     "digimoncard.com",
     "dbs-cardgame.com",
     "bandai.com", "bandai-tcg-plus.com",
+]
+STANDARD_DOMAINS = _DOMAINS_V1 + [
+    "fabtcg.com", "legendstory.com",
+    "unionarena-tcg.com",
+    "ws-tcg.com", "cf-vanguard.com", "shadowverse-evolve.com", "bushiroad.com",
+    "sorcerytcg.com",
+    "gatcg.com",
+    "hololive-official-cardgame.com",
+    "square-enix-games.com",
+    "cyberpunktcg.com",
 ]
 
 AUTO_MODI = {
@@ -39,6 +49,8 @@ def standard() -> dict:
         "offizielle_domains": STANDARD_DOMAINS,
         "impressum": "",
         "datenschutz": "",
+        # None = Standard aus der Umgebungsvariable QUELLEN, sonst Liste aktiver Datenquellen
+        "quellen_aktiv": None,
     }
 
 
@@ -48,6 +60,9 @@ def lesen() -> dict:
         gespeichert = json.loads(db.meta_get("einstellungen") or "{}")
     except ValueError:
         gespeichert = {}
+    # Alte, unveränderte Standardliste durch die aktuelle ersetzen (neue Hersteller kommen so automatisch dazu)
+    if gespeichert.get("offizielle_domains") == _DOMAINS_V1:
+        gespeichert.pop("offizielle_domains")
     wert.update({k: v for k, v in gespeichert.items() if k in wert})
     return wert
 
@@ -89,11 +104,18 @@ def aendern(daten: dict) -> dict:
             neu[feld] = str(daten[feld] or "").strip()[:30000]
     if "offizielle_domains" in daten:
         neu["offizielle_domains"] = _domains(daten["offizielle_domains"])
+    if "quellen_aktiv" in daten:
+        q = daten["quellen_aktiv"]
+        if q is not None and (not isinstance(q, list) or not all(isinstance(x, str) for x in q)):
+            raise ValueError("quellen_aktiv muss eine Liste sein")
+        neu["quellen_aktiv"] = q
     return _speichern(aktuell | neu)
 
 
 def _speichern(wert: dict) -> dict:
-    db.meta_set("einstellungen", json.dumps(wert, ensure_ascii=False))
+    # Nur speichern, was vom Standard abweicht – so wirken spätere Änderungen an den Standardwerten weiter
+    std = standard()
+    db.meta_set("einstellungen", json.dumps({k: v for k, v in wert.items() if std.get(k) != v}, ensure_ascii=False))
     return wert
 
 

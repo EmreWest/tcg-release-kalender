@@ -140,8 +140,7 @@ def pruefen(nur_spiel: str | None = None) -> str:
         gesamt, meldungen = 0, []
         status["automatisch"] = 0
         from . import quellen
-        per_api = {"magic"} if "scryfall" in quellen.AKTIV else set()
-        per_api |= {"yugioh"} if "ygoprodeck" in quellen.AKTIV else set()
+        per_api = quellen.spiele_mit_quelle()
         for s in db.spiele():
             if nur_spiel and s["id"] != nur_spiel:
                 continue

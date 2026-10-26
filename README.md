@@ -1,6 +1,6 @@
 # TCG-Release-Kalender
 
-Ein selbst gehosteter Release-Kalender für Sammelkartenspiele (Pokémon, One Piece, Magic: The Gathering, Disney Lorcana, Yu-Gi-Oh!, Riftbound, Star Wars: Unlimited und weitere). Die Oberfläche ist deutsch, die Termine beziehen sich auf Deutschland bzw. die EU.
+Ein selbst gehosteter Release-Kalender für Sammelkartenspiele (Pokémon, One Piece, Magic: The Gathering, Disney Lorcana, Yu-Gi-Oh!, Riftbound, Star Wars: Unlimited, Flesh and Blood, Union Arena und weitere – 20 Spiele ab Werk, beliebig erweiterbar). Die Oberfläche ist deutsch, die Termine beziehen sich auf Deutschland bzw. die EU.
 
 Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese Auswahl als Kalender in Apple-, Google-, Outlook- oder Thunderbird-Kalender. Neue Sets und Terminverschiebungen landen dann automatisch im eigenen Kalender.
 
@@ -18,7 +18,7 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 - Benachrichtigungen bei Änderungen per Discord-Webhook oder beliebigem JSON-Webhook.
 - Teilbare Links: Filter, Ansicht und geöffneter Termin stehen in der Adresse.
 - Verwaltung mit Passwortschutz: Termine und Spiele (Name, Farbe, Reihenfolge) pflegen, Vorschläge prüfen, JSON-Import und -Export.
-- Automatischer Abgleich mit offenen Daten-APIs: Magic-Sets über Scryfall, Yu-Gi-Oh!-Sets über YGOPRODeck – ohne Kosten und ohne manuelles Zutun.
+- Automatischer Abgleich mit offenen Daten-APIs für Magic, Yu-Gi-Oh!, Star Wars: Unlimited, Flesh and Blood und Pokémon (deutsche Ausgaben) – ohne Kosten und ohne manuelles Zutun.
 - Optional Recherche mit Claude für alle anderen Spiele: Neue Sets und Terminänderungen aus offiziellen Quellen werden automatisch übernommen, alles Unsichere landet als Vorschlag zur Prüfung.
 - Eigener Titel, Untertitel, Logo und Favicon, einstellbar in der Verwaltung.
 - Auf Mobilgeräten einmalig ein Hinweis mit Anleitung, wie man die Seite auf den Home-Bildschirm legt; sie startet dann wie eine App.
@@ -76,8 +76,9 @@ UID_DOMAIN=tcg-kalender.local
 SEITENTITEL=TCG-Release-Kalender
 SEITENUNTERTITEL=
 
-# Automatischer Abgleich mit offenen Daten-APIs (Magic über Scryfall, Yu-Gi-Oh! über YGOPRODeck)
-QUELLEN=scryfall,ygoprodeck
+# Startwert für die automatisch abgeglichenen Daten-APIs: alle, leer (= aus) oder eine Liste aus
+# scryfall, ygoprodeck, swudb, fabcube, tcgdex – danach in der Verwaltung unter „System“ umschaltbar
+QUELLEN=alle
 QUELLEN_INTERVALL_STUNDEN=12
 
 # Optional: automatische Recherche mit Claude für alle anderen Spiele
@@ -133,7 +134,7 @@ Alle Einstellungen laufen über Umgebungsvariablen (in der `.env`).
 | `UID_DOMAIN` | Domain für die eindeutigen IDs der Kalendereinträge. Nach dem ersten Abo nicht mehr ändern, sonst entstehen doppelte Einträge. | `tcg-kalender.local` |
 | `SEITENTITEL` | Startwert für Überschrift, Browser-Tab und Kalendername. Danach in der Verwaltung unter „Darstellung“ änderbar. | `TCG-Release-Kalender` |
 | `SEITENUNTERTITEL` | Startwert für den Untertitel | kurzer Beschreibungstext |
-| `QUELLEN` | Aktive Daten-APIs, kommagetrennt: `scryfall`, `ygoprodeck`. Leer = aus. | `scryfall,ygoprodeck` |
+| `QUELLEN` | Startwert für die aktiven Daten-APIs: `alle`, leer (= aus) oder kommagetrennt aus `scryfall`, `ygoprodeck`, `swudb`, `fabcube`, `tcgdex`. Danach in der Verwaltung unter „System“ umschaltbar. | `alle` |
 | `QUELLEN_INTERVALL_STUNDEN` | Abstand des Abgleichs in Stunden | `12` |
 | `TZ` | Zeitzone des Containers | `Europe/Berlin` |
 | `ANTHROPIC_API_KEY` | Aktiviert die automatische Recherche (siehe unten) | leer |
@@ -172,7 +173,7 @@ https://kalender.example.org/kalender.ics?spiele=pokemon,onepiece&status=bestaet
 
 | Parameter | Werte | Standard |
 |---|---|---|
-| `spiele` | IDs der Spiele, kommagetrennt. Die Standard-IDs: `pokemon`, `onepiece`, `magic`, `lorcana`, `yugioh`, `riftbound`, `swu`, `gundam`, `digimon`, `dbfw` | alle |
+| `spiele` | IDs der Spiele, kommagetrennt. Die Standard-IDs: `pokemon`, `onepiece`, `magic`, `lorcana`, `yugioh`, `riftbound`, `swu`, `gundam`, `digimon`, `dbfw`, `fab`, `unionarena`, `weiss`, `vanguard`, `shadowverse`, `hololive`, `fftcg`, `sorcery`, `grandarchive`, `cyberpunk` | alle |
 | `status` | `geruecht`, `angekuendigt`, `bestaetigt`, `verschoben`, `abgesagt`, `erschienen` | alle |
 | `typ` | `hauptset`, `spezialset`, `deck`, `sonstiges` | alle |
 | `prerelease` | `1` = Prerelease-Termine als eigene Einträge | aus |
@@ -211,6 +212,10 @@ Auf Smartphones und Tablets erscheint danach einmalig ein Hinweis mit kurzer Anl
 
 Unter Verwaltung → Rechtliches pflegst du Impressum und Datenschutzerklärung. Für beide gibt es Vorlagen, die genau beschreiben, was diese Software speichert und verarbeitet; die Felder in eckigen Klammern füllst du aus. Sobald ein Text gespeichert ist, erscheint der Link im Fuß der Seite. Die Vorlagen ersetzen keine Rechtsberatung.
 
+## Neue Spiele bei bestehenden Installationen
+
+Kommen mit einem Update neue Spiele in die Startdaten, werden sie beim nächsten Start einmalig ergänzt, samt bekannter Termine. Spiele, die du danach löschst, kommen nicht wieder.
+
 ## Termine pflegen
 
 In der Verwaltung unter `/admin`:
@@ -229,12 +234,15 @@ Bei Monats- oder Quartalsangaben ist das Datum der erste Tag des Zeitraums (z. B
 
 ## Datenquellen (automatisch)
 
-Für Magic und Yu-Gi-Oh! gibt es offene, frei nutzbare Daten-APIs. Der Container gleicht sie standardmäßig alle 12 Stunden ab:
+Für einige Spiele gibt es offene, frei nutzbare Daten-APIs. Der Container gleicht sie standardmäßig alle 12 Stunden ab; einzeln an- und abschalten lassen sie sich unter Verwaltung → System:
 
 | Quelle | Spiel | Liefert |
 |---|---|---|
 | [Scryfall](https://scryfall.com/docs/api) | Magic: The Gathering | alle angekündigten Sets mit weltweitem Release-Datum, inkl. Commander-Decks |
 | [YGOPRODeck](https://ygoprodeck.com/api-guide/) | Yu-Gi-Oh! | Sets mit TCG-Termin (Europa/Nordamerika), sobald die ersten Karten bekannt sind |
+| [SWU-DB](https://www.swu-db.com/api) | Star Wars: Unlimited | Hauptsets, Icons-Sets und Twin-Suns-Decks mit Release-Datum, oft Monate im Voraus |
+| [The FaB Cube](https://github.com/the-fab-cube/flesh-and-blood-cards) | Flesh and Blood | Booster-Sets, Armory-, Blitz- und Silver-Age-Decks, Mastery Packs, sobald sie im Datensatz stehen |
+| [TCGdex](https://tcgdex.dev/) | Pokémon | deutsche Ausgaben mit deutschem Set-Namen und Erscheinungsdatum; neue Sets erscheinen dort erst kurz vor Release |
 
 So arbeitet der Abgleich:
 
@@ -244,9 +252,9 @@ So arbeitet der Abgleich:
 - Deine manuellen Änderungen bleiben erhalten, solange sich der Wert in der Quelle nicht ändert.
 - Löschst du einen Termin in der Verwaltung, wird er nicht wieder angelegt.
 
-Unter Verwaltung → System siehst du das Ergebnis des letzten Abgleichs und kannst ihn sofort starten. Der Container braucht dafür Zugriff auf `api.scryfall.com` und `db.ygoprodeck.com`.
+Unter Verwaltung → System siehst du das Ergebnis des letzten Abgleichs und kannst ihn sofort starten. Der Container braucht dafür ausgehenden Zugriff auf `api.scryfall.com`, `db.ygoprodeck.com`, `api.swu-db.com`, `raw.githubusercontent.com` und `api.tcgdex.net`.
 
-Für Pokémon, One Piece, Lorcana und die übrigen Spiele gibt es keine vergleichbaren offenen Schnittstellen mit kommenden Sets. Eigene Scraper für die Herstellerseiten sind bewusst nicht eingebaut: Sie brechen bei jedem Redesign, viele Seiten blocken automatisierte Abrufe, und manche Nutzungsbedingungen schließen sie aus. Für diese Spiele gibt es die Recherche mit Claude.
+Für One Piece, Lorcana, Digimon, Union Arena und die übrigen Spiele gibt es keine offenen Schnittstellen, die kommende Sets mit Datum kennen (geprüft wurden u. a. OPTCG-API, Lorcast, Lorcana-API, Grand Archive und Sorcery). Eigene Scraper für die Herstellerseiten sind bewusst nicht eingebaut: Sie brechen bei jedem Redesign, viele Seiten blocken automatisierte Abrufe, und manche Nutzungsbedingungen schließen sie aus. Für diese Spiele gibt es die Recherche mit Claude.
 
 ## Automatische Recherche mit Claude (optional)
 
@@ -254,7 +262,7 @@ Mit gesetztem `ANTHROPIC_API_KEY` (erhältlich unter https://console.anthropic.c
 
 Pro Durchlauf fallen API-Kosten für Tokens und Websuchen an. Die aktuellen Preise stehen unter https://docs.claude.com/en/docs/about-claude/pricing.
 
-Spiele, die bereits über eine Datenquelle abgeglichen werden (Magic, Yu-Gi-Oh!), überspringt die Recherche, um Kosten zu sparen. Einzeln lassen sie sich unter „System“ trotzdem recherchieren.
+Spiele, die bereits über eine Datenquelle mit Vorlauf abgeglichen werden (Magic, Yu-Gi-Oh!, Star Wars: Unlimited, Flesh and Blood), überspringt die Recherche, um Kosten zu sparen. Einzeln lassen sie sich unter „System“ trotzdem recherchieren.
 
 ### Automatische Übernahme
 
@@ -368,7 +376,7 @@ Aufbau:
 | `app/atom.py` | Atom-Feed |
 | `app/notify.py` | Discord- und JSON-Webhooks |
 | `app/logos.py` | Hochgeladene Logos prüfen und speichern |
-| `app/quellen.py` | Abgleich mit Scryfall und YGOPRODeck |
+| `app/quellen.py` | Abgleich mit Scryfall, YGOPRODeck, SWU-DB, The FaB Cube und TCGdex |
 | `app/einstellungen.py` | In der Verwaltung änderbare Einstellungen |
 | `app/rechtliches.py` | Vorlagen und Formatierung für Impressum und Datenschutz |
 | `app/static/hinweise.js` | Speicher-Hinweis und Home-Bildschirm-Hinweis |

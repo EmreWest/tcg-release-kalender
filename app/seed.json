@@ -1,4 +1,5 @@
 {
+ "version": 2,
  "spiele": [
   {
    "id": "pokemon",
@@ -49,6 +50,66 @@
    "id": "dbfw",
    "name": "Dragon Ball Fusion World",
    "farbe": "#f06292"
+  },
+  {
+   "id": "fab",
+   "name": "Flesh and Blood",
+   "farbe": "#455a64",
+   "seit": 2
+  },
+  {
+   "id": "unionarena",
+   "name": "Union Arena",
+   "farbe": "#c0ca33",
+   "seit": 2
+  },
+  {
+   "id": "weiss",
+   "name": "Weiß Schwarz",
+   "farbe": "#90a4ae",
+   "seit": 2
+  },
+  {
+   "id": "vanguard",
+   "name": "Cardfight!! Vanguard",
+   "farbe": "#283593",
+   "seit": 2
+  },
+  {
+   "id": "shadowverse",
+   "name": "Shadowverse: Evolve",
+   "farbe": "#6a1b9a",
+   "seit": 2
+  },
+  {
+   "id": "hololive",
+   "name": "hololive OCG",
+   "farbe": "#4fc3f7",
+   "seit": 2
+  },
+  {
+   "id": "fftcg",
+   "name": "Final Fantasy TCG",
+   "farbe": "#ad1457",
+   "seit": 2
+  },
+  {
+   "id": "sorcery",
+   "name": "Sorcery: Contested Realm",
+   "farbe": "#827717",
+   "seit": 2
+  },
+  {
+   "id": "grandarchive",
+   "name": "Grand Archive",
+   "farbe": "#5c6bc0",
+   "seit": 2
+  },
+  {
+   "id": "cyberpunk",
+   "name": "Cyberpunk TCG",
+   "farbe": "#26a69a",
+   "seit": 2
   }
  ],
  "releases": [
@@ -367,6 +428,179 @@
    "datum": "2027-01-22",
    "status": "angekuendigt",
    "quelle": "https://www.akihabaratcgwarehouse.com/release-calendar/"
+  },
+  {
+   "spiel": "fab",
+   "name": "Outbreak",
+   "code": "OBK",
+   "typ": "hauptset",
+   "datum": "2027-02-12",
+   "status": "bestaetigt",
+   "notiz": "Eigenständiges Booster-Set mit sechs Helden (Dual-Class, Chaos). Weltweiter Release.",
+   "quelle": "https://fabtcg.com/products/booster-set/obk/"
+  },
+  {
+   "spiel": "fab",
+   "name": "Smash Palace: Chorus of Steel",
+   "typ": "spezialset",
+   "datum": "2026-10-30",
+   "status": "angekuendigt",
+   "notiz": "Laut Händlerkatalog, offiziell prüfen.",
+   "quelle": "https://tcgindex.io/tcg-release-dates"
+  },
+  {
+   "spiel": "unionarena",
+   "name": "GODDESS OF VICTORY: NIKKE (Precious Booster)",
+   "code": "UP01BT",
+   "typ": "spezialset",
+   "datum": "2026-10-23",
+   "status": "bestaetigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://ironforgetcg.com/union-arena/releases/"
+  },
+  {
+   "spiel": "unionarena",
+   "name": "BLEACH: Thousand-Year Blood War (Advanced Deck)",
+   "code": "UE01DC",
+   "typ": "deck",
+   "datum": "2026-11-06",
+   "status": "bestaetigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://ironforgetcg.com/union-arena/releases/"
+  },
+  {
+   "spiel": "unionarena",
+   "name": "BLEACH: Thousand-Year Blood War Vol.3",
+   "code": "UEX08BT",
+   "typ": "hauptset",
+   "datum": "2026-11-13",
+   "status": "bestaetigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://ironforgetcg.com/union-arena/releases/"
+  },
+  {
+   "spiel": "unionarena",
+   "name": "My Hero Academia (Special Booster)",
+   "code": "UE25BT",
+   "typ": "spezialset",
+   "datum": "2026-12-11",
+   "status": "bestaetigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://ironforgetcg.com/union-arena/releases/"
+  },
+  {
+   "spiel": "unionarena",
+   "name": "GURREN LAGANN",
+   "code": "UE26BT",
+   "typ": "hauptset",
+   "datum": "2027-01-22",
+   "status": "angekuendigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://www.unionarena-tcg.com/na/products/boosters/ttg-1.php"
+  },
+  {
+   "spiel": "unionarena",
+   "name": "Umamusume: Pretty Derby (Starter Deck)",
+   "code": "UE27ST",
+   "typ": "deck",
+   "datum": "2027-02-05",
+   "status": "angekuendigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://ironforgetcg.com/union-arena/releases/"
+  },
+  {
+   "spiel": "unionarena",
+   "name": "Umamusume: Pretty Derby",
+   "code": "UE27BT",
+   "typ": "hauptset",
+   "datum": "2027-02-12",
+   "status": "angekuendigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://ironforgetcg.com/union-arena/releases/"
+  },
+  {
+   "spiel": "unionarena",
+   "name": "D.Gray-man",
+   "code": "UE28BT",
+   "typ": "hauptset",
+   "datum": "2027-03-19",
+   "status": "angekuendigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://www.unionarena-tcg.com/na/products/boosters/dgm-1.php"
+  },
+  {
+   "spiel": "unionarena",
+   "name": "Puella Magi Madoka Magica",
+   "code": "UE29BT",
+   "typ": "hauptset",
+   "datum": "2027-04-30",
+   "status": "angekuendigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://ironforgetcg.com/union-arena/releases/"
+  },
+  {
+   "spiel": "unionarena",
+   "name": "Mushoku Tensei: Jobless Reincarnation",
+   "code": "UE30BT",
+   "typ": "hauptset",
+   "datum": "2027-05-21",
+   "status": "angekuendigt",
+   "notiz": "Termin der englischen Version.",
+   "quelle": "https://ironforgetcg.com/union-arena/releases/"
+  },
+  {
+   "spiel": "hololive",
+   "name": "Bouncer Bound",
+   "typ": "hauptset",
+   "datum": "2027-01-29",
+   "status": "bestaetigt",
+   "notiz": "Achter englischer Booster (FUWAMOCO). Weltweiter Release.",
+   "quelle": "https://x.com/hololive_OCG_EN/status/2093292515411779622"
+  },
+  {
+   "spiel": "fftcg",
+   "name": "Opus XXXI: Symphony of Heroes",
+   "code": "Opus XXXI",
+   "typ": "hauptset",
+   "datum": "2027-03-26",
+   "status": "angekuendigt",
+   "notiz": "Termin aus der japanischen Ankündigung; die englische Ausgabe erscheint üblicherweise zeitgleich.",
+   "quelle": "https://www.xeznaff.com/post/final-fantasy-trading-card-game-officially-announces-symphony-of-heroes-for-march-2027"
+  },
+  {
+   "spiel": "sorcery",
+   "name": "Frost Mage vs. Lavamancer",
+   "typ": "deck",
+   "datum": "2026-11-13",
+   "status": "angekuendigt",
+   "notiz": "Vorkonstruierte Decks. Laut Händlerkatalogen, teils schon früher im Vorverkauf.",
+   "quelle": "https://sparkl.gg/release-calendar/"
+  },
+  {
+   "spiel": "grandarchive",
+   "name": ".asphodel/cantabile",
+   "typ": "spezialset",
+   "datum": "2026-12-11",
+   "status": "angekuendigt",
+   "notiz": "Mit Pantheon-Edition und den Re:Collection-Decks Beatrice und Casella.",
+   "quelle": "https://sparkl.gg/release-calendar/"
+  },
+  {
+   "spiel": "cyberpunk",
+   "name": "Welcome to Night City",
+   "typ": "hauptset",
+   "datum": "2026-11-06",
+   "status": "angekuendigt",
+   "notiz": "Erstes Set des neuen Spiels.",
+   "quelle": "https://sparkl.gg/release-calendar/"
+  },
+  {
+   "spiel": "cyberpunk",
+   "name": "Starter Decks: Embracing Power & The Heist",
+   "typ": "deck",
+   "datum": "2026-11-06",
+   "status": "angekuendigt",
+   "quelle": "https://sparkl.gg/release-calendar/"
   }
  ]
 }

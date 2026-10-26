@@ -126,18 +126,43 @@ def init():
         if "logo" not in spalten:
             con.execute("ALTER TABLE spiele ADD COLUMN logo TEXT")
         leer = con.execute("SELECT COUNT(*) FROM spiele").fetchone()[0] == 0
-    if leer and os.path.exists(SEED_PFAD):
-        with open(SEED_PFAD, encoding="utf-8") as f:
-            seed = json.load(f)
-        with verbindung() as con:
-            for i, s in enumerate(seed["spiele"]):
-                con.execute(
-                    "INSERT INTO spiele (id, name, farbe, reihenfolge) VALUES (?,?,?,?)",
-                    (s["id"], s["name"], s.get("farbe", "#6b7280"), i),
-                )
-        for r in seed["releases"]:
-            anlegen(r, protokoll=False)
+    if not os.path.exists(SEED_PFAD):
+        return
+    with open(SEED_PFAD, encoding="utf-8") as f:
+        seed = json.load(f)
+    seed_version = int(seed.get("version", 1))
+    if leer:
+        _seed_einspielen(seed["spiele"], seed["releases"])
+        meta_set("seed_version", str(seed_version))
         log.info("Startdaten eingespielt: %d Spiele, %d Termine", len(seed["spiele"]), len(seed["releases"]))
+        return
+    # Bestehende Installation: Spiele, die mit einer neueren Version dazugekommen sind, einmalig ergänzen.
+    # Was danach in der Verwaltung gelöscht wird, kommt nicht wieder.
+    bisher = int(meta_get("seed_version") or 1)
+    if bisher >= seed_version:
+        return
+    vorhanden = {s["id"] for s in spiele()}
+    neue = [s for s in seed["spiele"] if int(s.get("seit", 1)) > bisher and s["id"] not in vorhanden]
+    ids = {s["id"] for s in neue}
+    termine = [r for r in seed["releases"] if r["spiel"] in ids]
+    if neue:
+        _seed_einspielen(neue, termine, protokoll=True)
+        log.info("Neue Spiele ergänzt: %s (%d Termine)", ", ".join(s["name"] for s in neue), len(termine))
+    meta_set("seed_version", str(seed_version))
+
+
+def _seed_einspielen(spiele_liste: list[dict], termine: list[dict], protokoll: bool = False):
+    with verbindung() as con:
+        start = con.execute("SELECT COALESCE(MAX(reihenfolge), -1) + 1 FROM spiele").fetchone()[0]
+        for i, s in enumerate(spiele_liste):
+            con.execute(
+                "INSERT INTO spiele (id, name, farbe, reihenfolge) VALUES (?,?,?,?)",
+                (s["id"], s["name"], s.get("farbe", "#6b7280"), start + i),
+            )
+    heute = date.today().isoformat()
+    for r in termine:
+        # Ins Änderungsprotokoll nur, was noch bevorsteht
+        anlegen(r, protokoll=protokoll and r["datum"] >= heute)
 
 
 def ist_erschienen(r: dict) -> bool:
