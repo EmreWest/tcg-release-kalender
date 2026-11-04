@@ -435,19 +435,30 @@ function wocheRendern() {
   archivFuerZeitraum(w);
   const tage = nachTag(eintraege());
   const h = iso(heute());
-  let html = `<div class="woche">`;
+  // Nur Tage mit Releases zeigen – so bleibt jedem Tag genug Platz
+  const tageMit = [];
   for (let i = 0; i < 7; i++) {
-    const d = plusTage(w, i), t = iso(d);
-    const liste = tage.get(t) || [];
+    const d = plusTage(w, i);
+    if ((tage.get(iso(d)) || []).length) tageMit.push(d);
+  }
+  if (!tageMit.length) {
+    $("#inhalt").innerHTML = `<div class="flaeche leer">In dieser Woche erscheint nichts${aktiveFilter() ? " für diese Filter" : ""}.</div>`;
+    return;
+  }
+  let html = `<div class="woche" style="--spalten:${tageMit.length}">`;
+  for (const d of tageMit) {
+    const t = iso(d);
+    const liste = tage.get(t);
     html += `<div class="woche-tag${t === h ? " heute" : ""}">
-      <div class="kopf-zeile"><b>${d.getDate()}</b><span>${WT_KURZ[d.getDay()]}</span></div>
+      <div class="kopf-zeile"><b>${d.getDate()}</b><span>${WT_KURZ[d.getDay()]}${t === h ? " · heute" : ""}</span></div>
       <div class="inhalt">${liste.length ? liste.map((e) => pille(e).replace('"><span>',
         `"><b class="woche-spiel">${logo(e.r.spiel, "logo-mini")}${esc(e.r.spiel_name)}</b><span>`).replace("</span></button>",
         `</span>${e.pre ? "" : `<small>${esc(META.typen[e.r.typ])}</small>`}</button>`)).join("")
-        : `<span class="frei">–</span>`}</div>
+        : ""}</div>
     </div>`;
   }
   html += `</div>`;
+  if (tageMit.length < 7) html += `<p class="hinweis woche-hinweis">Tage ohne Releases sind ausgeblendet.</p>`;
   $("#inhalt").innerHTML = html;
 }
 
@@ -694,7 +705,7 @@ async function zuHeute() {
   const a = zustand.ansicht;
   if (a === "monat" || a === "woche") {
     navigieren(0);
-    const ziel = a === "woche" && matchMedia("(max-width: 1000px)").matches ? $(".woche-tag.heute") : $("#leiste");
+    const ziel = (a === "woche" && matchMedia("(max-width: 700px)").matches && $(".woche-tag.heute")) || $("#leiste");
     sanftScrollen(ziel);
     const z = $(a === "monat" ? ".zelle.heute" : ".woche-tag.heute");
     if (z) { z.classList.remove("aufblitzen"); void z.offsetWidth; z.classList.add("aufblitzen"); }

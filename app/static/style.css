@@ -67,6 +67,8 @@
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
+/* Kein Zoom per Doppeltippen (fühlt sich mehr nach App an), Pinch-Zoom bleibt erlaubt */
+:where(*) { touch-action: manipulation; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -245,8 +247,8 @@ button { font: inherit; color: inherit; }
 .ungenau-panel .pillen { display: flex; flex-wrap: wrap; gap: 6px; }
 .ungenau-panel .pille { width: auto; max-width: 100%; font-size: 13px; padding: 4px 10px; }
 
-.woche { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
-.woche-tag { background: var(--fl); border: 1px solid var(--rand); border-radius: 12px; min-height: 260px; padding: 8px; display: flex; flex-direction: column; gap: 6px; box-shadow: var(--schatten); min-width: 0; }
+.woche { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; align-items: start; }
+.woche-tag { background: var(--fl); border: 1px solid var(--rand); border-radius: 12px; min-height: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px; box-shadow: var(--schatten); min-width: 0; }
 .woche-tag.heute { border-color: var(--heute); box-shadow: inset 0 0 0 1px var(--heute); }
 .woche-tag .kopf-zeile { display: flex; align-items: baseline; gap: 6px; padding: 0 2px 4px; border-bottom: 1px solid var(--rand); }
 .woche-tag .kopf-zeile b { font-size: 20px; font-weight: 750; }
@@ -254,7 +256,8 @@ button { font: inherit; color: inherit; }
 .woche-tag .pille { white-space: normal; padding: 6px 8px; display: block; font-size: 13px; }
 .woche-tag .pille small { display: block; color: var(--text2); font-size: 11px; }
 .woche-tag .frei { color: var(--text3); font-size: 12px; padding: 2px; }
-@media (max-width: 1000px) {
+.woche-hinweis { margin: 10px 2px 0; }
+@media (max-width: 700px) {
   .woche { grid-template-columns: 1fr; gap: 6px; }
   .woche-tag { min-height: 0; flex-direction: row; align-items: flex-start; gap: 12px; }
   .woche-tag .kopf-zeile { flex-direction: column; gap: 0; border-bottom: 0; width: 48px; flex: none; padding: 0; }
