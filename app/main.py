@@ -10,6 +10,7 @@ from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 
 from . import atom, checker, db, einstellungen, ics, logos, notify, quellen, rechtliches
 
@@ -36,6 +37,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="TCG-Release-Kalender", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+app.add_middleware(GZipMiddleware, minimum_size=1500)
 security = HTTPBasic(auto_error=False)
 
 
@@ -209,6 +211,13 @@ def api_release(rid: int):
     return r
 
 
+@app.get("/api/archiv")
+def api_archiv(spiele: str | None = None, typ: str | None = None):
+    """Alle vergangenen Releases, neueste zuerst. Spielname und Farbe ergänzt die Seite aus /api/meta."""
+    rows = db.archiv(_liste(spiele), _liste(typ))
+    return {"anzahl": len(rows), "releases": rows}
+
+
 @app.get("/api/aenderungen")
 def api_aenderungen(spiele: str | None = None, limit: int = Query(30, ge=1, le=200)):
     eintraege = db.aenderungen(limit, _liste(spiele))
@@ -323,9 +332,17 @@ def admin_darstellung_entfernen(art: str, _=Depends(admin)):
     return {"ok": True}
 
 
+@app.post("/api/admin/quellen/historie")
+def admin_historie(quelle: str | None = None, _=Depends(admin)):
+    if quellen.status["laeuft"] or quellen.status["historie_laeuft"]:
+        return {"gestartet": False, "meldung": "Ein Abgleich läuft bereits."}
+    threading.Thread(target=quellen.historie_importieren, args=(quelle, True), daemon=True).start()
+    return {"gestartet": True}
+
+
 @app.post("/api/admin/quellen/abgleich")
 def admin_abgleich(quelle: str | None = None, _=Depends(admin)):
-    if quellen.status["laeuft"]:
+    if quellen.status["laeuft"] or quellen.status["historie_laeuft"]:
         return {"gestartet": False, "meldung": "Abgleich läuft bereits."}
     threading.Thread(target=quellen.abgleichen, args=(quelle,), daemon=True).start()
     return {"gestartet": True}

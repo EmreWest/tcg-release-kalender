@@ -345,3 +345,94 @@ def test_quellen_parser(monkeypatch):
     ])
     sets = {s["code"]: s for s in quellen.fabcube("2026-10-01")}
     assert set(sets) == {"OBK", "AMO"} and sets["AMO"]["typ"] == "deck" and sets["OBK"]["typ"] == "hauptset"
+
+
+def test_erschienen_bei_monat_und_quartal():
+    from datetime import date as _d, timedelta as _td
+    vor_einem_jahr = (_d.today() - _td(days=400)).replace(day=1).isoformat()
+    assert db.ist_erschienen({"status": "bestaetigt", "genauigkeit": "monat", "datum": vor_einem_jahr})
+    diesen_monat = _d.today().replace(day=1).isoformat()
+    assert not db.ist_erschienen({"status": "angekuendigt", "genauigkeit": "monat", "datum": diesen_monat})
+    assert db.zeitraum_ende("2026-11-01", "quartal") == "2026-12-31"
+    assert db.zeitraum_ende("2026-02-01", "monat") == "2026-02-28"
+
+
+def _falsche_quelle(sets):
+    return {"falsch": {"funktion": lambda ab, alle=False: [s for s in sets if s["datum"] >= ab],
+                       "text": "Testquelle", "spiele": ["magic"]}}
+
+
+def test_historie_import(client, monkeypatch):
+    from app import quellen
+    gesehen = []
+    monkeypatch.setattr(db, "BEOBACHTER", [gesehen.append])
+    vorhanden = next(r for r in client.get("/api/releases?spiele=magic").json() if r["name"] == "Star Trek")
+    sets = [
+        {"extern_id": "x:1", "spiel": "magic", "name": "Altes Set", "code": "ALT", "typ": "hauptset",
+         "datum": "2001-05-04", "quelle": "https://example.org", "notiz": "n"},
+        {"extern_id": "x:2", "spiel": "magic", "name": "Star Trek", "code": "TRK", "typ": "hauptset",
+         "datum": "2026-11-20", "quelle": "https://example.org", "notiz": "n"},
+        {"extern_id": "x:3", "spiel": "magic", "name": "Zukunft", "code": "ZUK", "typ": "hauptset",
+         "datum": "2030-01-04", "quelle": "https://example.org", "notiz": "n"},
+    ]
+    monkeypatch.setattr(quellen, "QUELLEN", _falsche_quelle(sets))
+    vorher = len(db.aenderungen(500))
+    assert "2 Sets übernommen" in quellen.historie_importieren()
+    # Bestehender Termin nur verknüpft, nicht verschoben
+    assert client.get(f"/api/releases/{vorhanden['id']}").json()["datum"] == vorhanden["datum"]
+    archiv = client.get("/api/archiv?spiele=magic").json()["releases"]
+    assert any(r["name"] == "Altes Set" for r in archiv)
+    assert not any(r["name"] == "Zukunft" for r in archiv)
+    # Nur das kommende Set steht im Änderungsprotokoll, Benachrichtigungen gab es keine
+    neu = db.aenderungen(500)[: len(db.aenderungen(500)) - vorher]
+    assert [a["name"] for a in neu] == ["Zukunft"]
+    assert gesehen == []
+    # Einmalig: zweiter Lauf tut nichts, erzwungener Lauf legt nichts doppelt an
+    assert "bereits vollständig" in quellen.historie_importieren()
+    quellen.historie_importieren(erzwingen=True)
+    assert sum(1 for r in db.releases(spiele_filter=["magic"], von="1900-01-01") if r["name"] == "Altes Set") == 1
+    assert quellen.historie_stand()["falsch"]["neu"] == 2
+
+
+def test_tcgcsv_parser(monkeypatch):
+    from app import quellen
+    monkeypatch.setattr(quellen.time, "sleep", lambda s: None)
+    monkeypatch.setattr(quellen.db, "spiele", lambda: [{"id": "onepiece"}, {"id": "cyberpunk"}])
+    gruppen = {
+        68: [
+            {"groupId": 1, "name": "Romance Dawn", "abbreviation": "OP01", "publishedOn": "2022-12-02T00:00:00"},
+            {"groupId": 2, "name": "Romance Dawn Pre-Release Cards", "abbreviation": "OP01PR", "publishedOn": "2022-11-25T00:00:00"},
+            {"groupId": 3, "name": "ST-31: Starter Deck 31 RED Monkey.D.Luffy", "abbreviation": "ST-31", "publishedOn": "2026-07-31T00:00:00"},
+            {"groupId": 4, "name": "Extra Booster: One Piece Heroines Edition Vol. 2", "abbreviation": "EB05", "publishedOn": "2030-10-30T00:00:00"},
+            {"groupId": 5, "name": "One Piece Promotion Cards", "abbreviation": "P", "publishedOn": "2022-09-01T00:00:00"},
+            {"groupId": 6, "name": "Starter Deck 1: Straw Hat Crew", "abbreviation": "ST-01", "publishedOn": "2022-12-02T00:00:00"},
+            {"groupId": 7, "name": "Starter Deck 1 Straw Hat Crew", "abbreviation": "ST01", "publishedOn": "2022-12-02T00:00:00"},
+        ],
+        92: [{"groupId": 8, "name": "The Heist - Retail Starter Deck", "abbreviation": "", "publishedOn": "2026-11-06T00:00:00"}],
+    }
+    monkeypatch.setattr(quellen, "_laden", lambda url: {"results": gruppen[int(url.split("/")[-2])]})
+    sets = {s["extern_id"]: s for s in quellen.tcgcsv("1990-01-01")}
+    assert set(sets) == {"tcgcsv:1", "tcgcsv:3", "tcgcsv:4", "tcgcsv:6", "tcgcsv:8"}
+    assert sets["tcgcsv:3"]["name"] == "Starter Deck 31 RED Monkey.D.Luffy" and sets["tcgcsv:3"]["typ"] == "deck"
+    assert sets["tcgcsv:1"]["typ"] == "hauptset" and sets["tcgcsv:1"]["status"] == "bestaetigt"
+    assert sets["tcgcsv:4"]["typ"] == "spezialset" and sets["tcgcsv:4"]["status"] == "angekuendigt"
+    assert sets["tcgcsv:8"]["name"] == "The Heist Starter Deck" and sets["tcgcsv:8"]["code"] is None
+
+
+def test_archiv_endpunkt_und_seite(client):
+    d = client.get("/api/archiv").json()
+    assert d["anzahl"] == len(d["releases"]) > 0
+    from datetime import date as _d
+    assert all(r["datum"] < _d.today().isoformat() for r in d["releases"])
+    daten = [r["datum"] for r in d["releases"]]
+    assert daten == sorted(daten, reverse=True)
+    assert 'data-ansicht="archiv"' in client.get("/").text
+
+
+def test_aufgeteilte_startdaten_bereinigt(client):
+    db.anlegen({"spiel": "dbfw", "name": "Starter Decks FS13 & FS14", "datum": "2027-01-22", "typ": "deck"})
+    db.meta_set("seed_version", "2")
+    db.init()
+    namen = {r["name"] for r in db.releases(spiele_filter=["dbfw"], von="1900-01-01")}
+    assert "Starter Decks FS13 & FS14" not in namen
+    assert "Starter Deck 13: The Saiyan Raised on Earth" in namen

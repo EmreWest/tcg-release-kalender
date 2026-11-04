@@ -441,3 +441,40 @@ img.logo { display: inline-block; object-fit: contain; flex: none; vertical-alig
 @media (min-width: 901px) {
   .filter { max-height: calc(100vh - 32px); overflow-y: auto; overscroll-behavior: contain; }
 }
+
+/* Archiv */
+.archiv-hinweis { display: flex; justify-content: center; margin: 18px 0 4px; }
+.jahr-wahl select { width: auto; min-width: 130px; }
+.archiv-jahr { font-size: 18px; font-weight: 750; margin: 22px 0 8px; letter-spacing: -.01em; }
+.archiv-jahr:first-child { margin-top: 0; }
+.archiv-liste { overflow: hidden; }
+.archiv-monat {
+  padding: 7px 14px; font-size: 12px; font-weight: 650; color: var(--text2); background: var(--fl2);
+  border-top: 1px solid var(--rand);
+}
+.archiv-monat:first-child { border-top: 0; }
+.archiv-zeile {
+  display: grid; grid-template-columns: 74px minmax(120px, 190px) minmax(0, 1fr) auto; gap: 4px 14px; align-items: baseline;
+  width: 100%; text-align: left; border: 0; border-top: 1px solid var(--rand); background: var(--fl);
+  padding: 9px 14px 9px 16px; cursor: pointer; position: relative; font-size: 14px;
+}
+.archiv-zeile::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--c); }
+.archiv-monat + .archiv-zeile { border-top: 0; }
+.archiv-zeile:hover { background: color-mix(in srgb, var(--c) 7%, var(--fl)); }
+.archiv-datum { color: var(--text2); font-size: 13px; white-space: nowrap; }
+.archiv-spiel { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.archiv-name { min-width: 0; overflow-wrap: anywhere; }
+.archiv-name .code { font-size: 12px; color: var(--text3); }
+.archiv-typ { color: var(--text3); font-size: 12px; white-space: nowrap; }
+@media (max-width: 700px) {
+  .archiv-zeile { grid-template-columns: 62px minmax(0, 1fr); padding: 9px 12px 9px 14px; }
+  .archiv-spiel { grid-column: 2; }
+  .archiv-name { grid-column: 2; }
+  .archiv-typ { grid-column: 2; }
+  .archiv-datum { grid-row: 1 / span 3; }
+}
+@media (max-width: 560px) {
+  .segment { overflow-x: auto; scrollbar-width: none; }
+  .segment::-webkit-scrollbar { display: none; }
+  .segment button { flex: 1 0 auto; padding: 6px 9px; }
+}

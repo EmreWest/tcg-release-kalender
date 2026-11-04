@@ -1,11 +1,15 @@
-"""Abgleich mit offenen Daten-APIs: Scryfall (Magic), YGOPRODeck (Yu-Gi-Oh!), SWU-DB (Star Wars: Unlimited),
-The FaB Cube (Flesh and Blood) und TCGdex (Pokémon, deutsche Ausgaben).
+"""Abgleich mit offenen Daten-APIs.
+
+- Scryfall (Magic), YGOPRODeck (Yu-Gi-Oh!), SWU-DB (Star Wars: Unlimited), The FaB Cube (Flesh and Blood),
+  TCGdex (Pokémon, deutsche Ausgaben)
+- TCGCSV, ein offener Spiegel des TCGplayer-Katalogs, für alle übrigen Spiele
 
 Regeln:
 - Neue Sets werden automatisch angelegt.
 - Ein bestehender Termin wird nur geändert, wenn sich der Wert in der Quelle seit dem
   letzten Abgleich geändert hat. Manuelle Korrekturen in der Verwaltung bleiben so erhalten.
 - Ein Termin, den du gelöscht hast, wird nicht wieder angelegt.
+- Die Historie (alle vergangenen Sets) wird je Quelle einmalig importiert und bleibt danach bestehen.
 """
 import json
 import logging
@@ -21,42 +25,40 @@ from . import db, einstellungen
 log = logging.getLogger("tcg-kalender.quellen")
 
 INTERVALL_STUNDEN = float(os.environ.get("QUELLEN_INTERVALL_STUNDEN") or "12")
+HISTORIE_AKTIV = (os.environ.get("HISTORIE") or "1").strip().lower() not in ("0", "aus", "false", "nein")
 USER_AGENT = "tcg-release-kalender/1.0 (+https://github.com/EmreWest/tcg-release-kalender)"
+ANFANG = "1990-01-01"
 
 _lock = threading.Lock()
-status = {"laeuft": False, "letzte_meldung": None}
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS quellen_stand (
-    extern_id TEXT PRIMARY KEY,
-    release_id INTEGER,
-    datum TEXT,
-    name TEXT,
-    gesehen TEXT NOT NULL
-);
-"""
+status = {"laeuft": False, "letzte_meldung": None, "historie_laeuft": False}
 
 
 def _laden(url: str):
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=40) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
-def _norm(name: str) -> str:
+def _norm(name: str | None) -> str:
     return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+def _iso(text: str | None) -> str | None:
+    d = (text or "")[:10]
+    return d if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) else None
 
 
 # --- Quellen -------------------------------------------------------------------
 
 SCRYFALL_TYPEN = {
     "expansion": "hauptset", "core": "hauptset",
-    "masters": "spezialset", "draft_innovation": "spezialset",
-    "commander": "deck", "starter": "deck", "duel_deck": "deck",
+    "masters": "spezialset", "draft_innovation": "spezialset", "funny": "spezialset",
+    "commander": "deck", "starter": "deck", "duel_deck": "deck", "planechase": "deck", "archenemy": "deck",
+    "from_the_vault": "sonstiges", "spellbook": "sonstiges", "premium_deck": "sonstiges",
 }
 
 
-def scryfall(ab: str) -> list[dict]:
+def scryfall(ab: str, alle: bool = False) -> list[dict]:
     daten = _laden("https://api.scryfall.com/sets")["data"]
     sets = []
     for s in daten:
@@ -93,17 +95,19 @@ def _ygo_typ(name: str, anzahl: int) -> str:
     return "spezialset"
 
 
-def ygoprodeck(ab: str) -> list[dict]:
+def ygoprodeck(ab: str, alle: bool = False) -> list[dict]:
     daten = _laden("https://db.ygoprodeck.com/api/v7/cardsets.php")
-    sets = []
+    # Manche Set-Codes kommen mehrfach vor; je Code zählt der früheste Termin
+    nach_id: dict[str, dict] = {}
     for s in daten:
-        d = s.get("tcg_date") or ""
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) or d < ab:
+        d = _iso(s.get("tcg_date"))
+        if not d or d < ab or _YGO_AUSSCHLUSS.search(s.get("set_name", "")):
             continue
-        if _YGO_AUSSCHLUSS.search(s.get("set_name", "")):
+        eid = f"ygoprodeck:{s.get('set_code') or _norm(s['set_name'])}"
+        if eid in nach_id and nach_id[eid]["datum"] <= d:
             continue
-        sets.append({
-            "extern_id": f"ygoprodeck:{s.get('set_code') or _norm(s['set_name'])}",
+        nach_id[eid] = {
+            "extern_id": eid,
             "spiel": "yugioh",
             "name": s["set_name"],
             "code": s.get("set_code") or None,
@@ -111,8 +115,8 @@ def ygoprodeck(ab: str) -> list[dict]:
             "datum": d,
             "quelle": "https://ygoprodeck.com/",
             "notiz": "Termin laut YGOPRODeck (TCG-Termin Europa/Nordamerika).",
-        })
-    return sets
+        }
+    return list(nach_id.values())
 
 
 def _us_datum(text: str) -> str | None:
@@ -132,7 +136,7 @@ def _us_datum(text: str) -> str | None:
 _SWU_AUSSCHLUSS = re.compile(r"promo|judge|exclusive|convention|gamegenic|costco|gift box|showdown|prize|event", re.I)
 
 
-def swudb(ab: str) -> list[dict]:
+def swudb(ab: str, alle: bool = False) -> list[dict]:
     daten = _laden("https://api.swu-db.com/sets")
     sets = []
     for s in daten:
@@ -170,7 +174,7 @@ def _fab_typ(name: str) -> str:
     return "hauptset"
 
 
-def fabcube(ab: str) -> list[dict]:
+def fabcube(ab: str, alle: bool = False) -> list[dict]:
     daten = _laden("https://raw.githubusercontent.com/the-fab-cube/flesh-and-blood-cards/develop/json/english/set.json")
     sets = []
     for s in daten:
@@ -180,8 +184,8 @@ def fabcube(ab: str) -> list[dict]:
         if not termine:
             continue
         erster = min(termine, key=lambda p: p["initial_release_date"])
-        d = erster["initial_release_date"][:10]
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) or d < ab:
+        d = _iso(erster["initial_release_date"])
+        if not d or d < ab:
             continue
         quelle = erster.get("product_page") or erster.get("card_database") or "https://fabtcg.com/"
         sets.append({
@@ -197,10 +201,10 @@ def fabcube(ab: str) -> list[dict]:
     return sets
 
 
-_TCGDEX_AUSSCHLUSS = re.compile(r"promo|mcdonald|trainer kit|pokémon go|pocket|energ", re.I)
+_TCGDEX_AUSSCHLUSS = re.compile(r"promo|mcdonald|trainer kit|pocket|energ", re.I)
 
 
-def tcgdex(ab: str) -> list[dict]:
+def tcgdex(ab: str, alle: bool = False) -> list[dict]:
     """Deutsche Pokémon-Sets mit deutschem Erscheinungsdatum. Neue Sets erscheinen dort meist kurz vor Release."""
     de = _laden("https://api.tcgdex.net/v2/de/sets")
     try:
@@ -208,17 +212,24 @@ def tcgdex(ab: str) -> list[dict]:
     except Exception:  # noqa: BLE001
         en = {}
     sets = []
-    for s in de[-15:]:  # Liste ist chronologisch, für kommende Sets reichen die letzten Einträge
+    # Die Liste ist chronologisch; für den laufenden Abgleich reichen die letzten Einträge
+    for s in (de if alle else de[-15:]):
+        if re.fullmatch(r"[A-Z]\d.*|P-[A-Z]", s["id"]):  # TCG Pocket
+            continue
         try:
             detail = _laden(f"https://api.tcgdex.net/v2/de/sets/{s['id']}")
         except Exception:  # noqa: BLE001
             continue
-        d = (detail.get("releaseDate") or "")[:10]
+        if alle:
+            time.sleep(0.1)
+        if (detail.get("serie") or {}).get("id") == "tcgp":
+            continue
+        d = _iso(detail.get("releaseDate"))
         name_de = detail.get("name") or s.get("name") or ""
         name_en = en.get(s["id"]) or name_de
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) or d < ab:
+        if not d or d < ab:
             continue
-        if _TCGDEX_AUSSCHLUSS.search(f"{name_de} {name_en} {s['id']}") or s["id"].endswith(("p", "-p")):
+        if _TCGDEX_AUSSCHLUSS.search(f"{name_de} {name_en}") or re.search(r"(^|[^a-z])p$|-p$", s["id"]):
             continue
         offiziell = (detail.get("cardCount") or {}).get("official") or 0
         typ = "hauptset" if offiziell >= 80 and not s["id"].endswith("-c") else "spezialset"
@@ -236,17 +247,93 @@ def tcgdex(ab: str) -> list[dict]:
     return sets
 
 
+# TCGplayer-Kategorien der Spiele ohne eigene Datenquelle
+TCGCSV_KATEGORIEN = {
+    "onepiece": 68, "lorcana": 71, "riftbound": 89, "gundam": 86, "digimon": 63, "dbfw": 80,
+    "unionarena": 81, "weiss": 20, "vanguard": 16, "shadowverse": 73, "hololive": 87, "fftcg": 24,
+    "sorcery": 77, "grandarchive": 74, "cyberpunk": 92,
+}
+
+_TCGCSV_AUSSCHLUSS = re.compile(
+    r"promo|pre-?release|release event|event cards|celebration event|tournament|championship cards|judge|"
+    r"prize|demo deck|revision pack|energy marker|alternate art reprint|\btokens?\b|box topper|gloryfinder|"
+    r"learn together|exclusive cards|kickstarter|event pack|organized play|playmat|sleeve|participation|"
+    r"launch party|- beta\b|brawl season|welcome kit|secret garden|\bstore\b|\bpr cards?\b", re.I)
+_TCGCSV_PRAEFIX = re.compile(r"^(?=[A-Za-z\-/+]*\d)[A-Za-z0-9\-/+]{2,14}:\s+")
+
+
+def _tcgcsv_typ(name: str, code: str) -> str:
+    n, c = name.lower(), (code or "").upper()
+    if re.match(r"^(ST|SD|TD|DZ-SD|DZ-SS|D-SD|D-SS|V-SD|SS|FS|GD-?ST)[-\d]", c) or re.search(
+            r"starter|start deck|trial deck|deck ?set|structure|advanced deck|battle deck|master deck|\bdecks?\b", n):
+        return "deck"
+    if re.search(r"bundle|gift|box set|\btin\b|collection box|\bkit\b|playset", n):
+        return "sonstiges"
+    if re.match(r"^(EB|PRB|EX|RB|LM|AD|CP|ECP|PCS|HEB|TBP|TB|SP)\d", c.replace("-", "")) or re.search(
+            r"extra booster|premium booster|special booster|precious booster|manga booster|story booster|"
+            r"memorial|collection|anniversary|re: ?collection|limited|title booster|premium|reprint|alter edition|"
+            r"pantheon|draft pack|supporter pack|vault|resurgence|advanced booster|illumineer|selection|"
+            r"special series|lite\b", n):
+        return "spezialset"
+    return "hauptset"
+
+
+def tcgcsv(ab: str, alle: bool = False) -> list[dict]:
+    vorhanden = {s["id"] for s in db.spiele()}
+    heute = date.today().isoformat()
+    sets = []
+    for spiel, kategorie in TCGCSV_KATEGORIEN.items():
+        if spiel not in vorhanden:
+            continue
+        try:
+            gruppen = _laden(f"https://tcgcsv.com/tcgplayer/{kategorie}/groups").get("results") or []
+        except Exception:  # noqa: BLE001
+            log.warning("TCGCSV: Kategorie %s nicht abrufbar", kategorie)
+            continue
+        time.sleep(0.2)
+        gesehen = set()
+        for g in sorted(gruppen, key=lambda g: g.get("publishedOn") or ""):
+            d = _iso(g.get("publishedOn"))
+            roh = (g.get("name") or "").strip()
+            if not d or d < ab or not roh or _TCGCSV_AUSSCHLUSS.search(roh):
+                continue
+            code = (g.get("abbreviation") or "").strip().rstrip("/").strip() or None
+            name = _TCGCSV_PRAEFIX.sub("", roh).strip() or roh
+            name = re.sub(r"\s+-\s+retail\b", "", name, flags=re.I).strip()
+            schluessel = (_norm(name), d)
+            if schluessel in gesehen:
+                continue
+            gesehen.add(schluessel)
+            sets.append({
+                "extern_id": f"tcgcsv:{g['groupId']}",
+                "spiel": spiel,
+                "name": name,
+                "code": code,
+                "typ": _tcgcsv_typ(name, code or ""),
+                "datum": d,
+                # Künftige Termine im Katalog sind Händlerangaben, keine offizielle Bestätigung
+                "status": "bestaetigt" if d < heute else "angekuendigt",
+                "quelle": "https://tcgcsv.com/",
+                "notiz": "Termin laut TCGplayer-Katalog (Release in Nordamerika, in Europa meist gleich).",
+            })
+    return sets
+
+
 QUELLEN = {
-    "scryfall": {"funktion": scryfall, "text": "Scryfall (Magic)", "spiel": "magic"},
-    "ygoprodeck": {"funktion": ygoprodeck, "text": "YGOPRODeck (Yu-Gi-Oh!)", "spiel": "yugioh"},
-    "swudb": {"funktion": swudb, "text": "SWU-DB (Star Wars: Unlimited)", "spiel": "swu"},
-    "fabcube": {"funktion": fabcube, "text": "The FaB Cube (Flesh and Blood)", "spiel": "fab"},
-    "tcgdex": {"funktion": tcgdex, "text": "TCGdex (Pokémon, deutsche Ausgaben)", "spiel": "pokemon"},
+    "scryfall": {"funktion": scryfall, "text": "Scryfall (Magic)", "spiele": ["magic"]},
+    "ygoprodeck": {"funktion": ygoprodeck, "text": "YGOPRODeck (Yu-Gi-Oh!)", "spiele": ["yugioh"]},
+    "swudb": {"funktion": swudb, "text": "SWU-DB (Star Wars: Unlimited)", "spiele": ["swu"]},
+    "fabcube": {"funktion": fabcube, "text": "The FaB Cube (Flesh and Blood)", "spiele": ["fab"]},
+    "tcgdex": {"funktion": tcgdex, "text": "TCGdex (Pokémon, deutsche Ausgaben)", "spiele": ["pokemon"]},
+    "tcgcsv": {"funktion": tcgcsv, "text": "TCGplayer-Katalog über TCGCSV (alle übrigen Spiele)",
+               "spiele": list(TCGCSV_KATEGORIEN)},
 }
 QUELLEN_TEXT = {k: v["text"] for k, v in QUELLEN.items()}
-# Spiele, bei denen die Datenquelle kommende Sets zuverlässig früh genug kennt – dort spart sich die
-# Claude-Recherche den Aufwand. TCGdex listet neue Sets erst kurz vor Release, Pokémon bleibt daher drin.
+# Quellen, die kommende Sets zuverlässig früh genug kennen – für diese Spiele spart sich die
+# Claude-Recherche den Aufwand. TCGdex und TCGplayer listen neue Sets oft erst kurz vor Release.
 VOLLSTAENDIG = {"scryfall", "ygoprodeck", "swudb", "fabcube"}
+# Bei diesen Quellen wird ein bestehender Termin beim ersten Treffer nur verknüpft, nicht angeglichen
+NUR_VERKNUEPFEN = {"tcgcsv"}
 
 
 def _standard_aktiv() -> set[str]:
@@ -264,7 +351,7 @@ def aktive() -> set[str]:
 
 
 def spiele_mit_quelle() -> set[str]:
-    return {QUELLEN[q]["spiel"] for q in aktive() if q in VOLLSTAENDIG}
+    return {sp for q in aktive() if q in VOLLSTAENDIG for sp in QUELLEN[q]["spiele"]}
 
 
 # --- Abgleich ------------------------------------------------------------------
@@ -273,72 +360,98 @@ def _stand(con, extern_id):
     return con.execute("SELECT * FROM quellen_stand WHERE extern_id = ?", (extern_id,)).fetchone()
 
 
+_PLATZHALTER = re.compile(r"ohne namen|unbenannt|\btba\b", re.I)
+
+
 def _passender_termin(s: dict, kandidaten: list[dict], verknuepft: set[int]) -> dict | None:
     frei = [r for r in kandidaten if r["id"] not in verknuepft]
     n = _norm(s["name"])
+    code = _norm(s.get("code"))
     for r in frei:
-        if _norm(r["name"]) == n or (r.get("code") and s.get("code") and _norm(r["code"]) == _norm(s["code"])):
+        if _norm(r["name"]) == n or (code and r.get("code") and _norm(r["code"]) == code):
             return r
-    # Platzhalter ohne Namen, gleicher Tag und gleicher Produkttyp
+    sd = date.fromisoformat(s["datum"])
     for r in frei:
-        if r["datum"] == s["datum"] and r["typ"] == s["typ"] and re.search(r"ohne namen|unbenannt|tba", r["name"], re.I):
+        abstand = abs((date.fromisoformat(r["datum"]) - sd).days)
+        # Platzhalter ohne Namen am selben Tag mit gleichem Produkttyp
+        if abstand == 0 and r["typ"] == s["typ"] and _PLATZHALTER.search(r["name"]):
+            return r
+        # Gleiches Set unter leicht anderem Namen, z. B. „Heroines Edition Vol. 2“ und
+        # „Extra Booster: One Piece Heroines Edition Vol. 2“
+        kurz, lang = sorted((_norm(r["name"]), n), key=len)
+        if abstand <= 21 and len(kurz) >= 10 and kurz in lang:
             return r
     return None
 
 
-def abgleich_spiel(sets: list[dict]) -> dict:
+def abgleich(sets: list[dict], historie: bool = False, angleichen: bool = True) -> dict:
+    """Gleicht Sets (auch mehrerer Spiele) mit der Datenbank ab.
+    historie=True: bestehende Termine nur verknüpfen und keine Benachrichtigungen verschicken."""
     ergebnis = {"neu": 0, "geaendert": 0}
     if not sets:
         return ergebnis
-    spiel = sets[0]["spiel"]
-    if spiel not in {s["id"] for s in db.spiele()}:
-        return ergebnis
+    vorhanden = {s["id"] for s in db.spiele()}
+    heute = date.today().isoformat()
     with db.verbindung() as con:
-        con.executescript(SCHEMA)
         verknuepft = {r["release_id"] for r in con.execute("SELECT release_id FROM quellen_stand") if r["release_id"]}
-    kandidaten = db.releases(spiele_filter=[spiel], von=(date.today() - timedelta(days=120)).isoformat())
+    von = ANFANG if historie else (date.today() - timedelta(days=120)).isoformat()
+    kandidaten_je_spiel: dict[str, list[dict]] = {}
+    erledigt = set()
 
-    for s in sets:
-        with db.verbindung() as con:
-            st = _stand(con, s["extern_id"])
-        jetzt = db.jetzt()
-        if st:
-            r = db.release(st["release_id"]) if st["release_id"] else None
-            if not r:
-                continue  # in der Verwaltung gelöscht: nicht wieder anlegen
-            if st["datum"] != s["datum"]:
-                # Termin hat sich in der Quelle geändert -> übernehmen (gilt automatisch als verschoben)
-                db.aendern(r["id"], {"datum": s["datum"], "genauigkeit": "tag"})
-                ergebnis["geaendert"] += 1
+    token = db.STUMM.set(True) if historie else None
+    try:
+        for s in sorted(sets, key=lambda x: (x["spiel"], x["datum"])):
+            if s["spiel"] not in vorhanden or s["extern_id"] in erledigt:
+                continue
+            erledigt.add(s["extern_id"])
+            if s["spiel"] not in kandidaten_je_spiel:
+                kandidaten_je_spiel[s["spiel"]] = db.releases(spiele_filter=[s["spiel"]], von=von)
             with db.verbindung() as con:
-                con.execute("UPDATE quellen_stand SET datum = ?, name = ?, gesehen = ? WHERE extern_id = ?",
-                            (s["datum"], s["name"], jetzt, s["extern_id"]))
-            continue
+                st = _stand(con, s["extern_id"])
+            jetzt = db.jetzt()
+            if st:
+                r = db.release(st["release_id"]) if st["release_id"] else None
+                if not r:
+                    continue  # in der Verwaltung gelöscht: nicht wieder anlegen
+                if st["datum"] != s["datum"]:
+                    # Termin hat sich in der Quelle geändert -> übernehmen (gilt automatisch als verschoben)
+                    db.aendern(r["id"], {"datum": s["datum"], "genauigkeit": "tag"})
+                    ergebnis["geaendert"] += 1
+                with db.verbindung() as con:
+                    con.execute("UPDATE quellen_stand SET datum = ?, name = ?, gesehen = ? WHERE extern_id = ?",
+                                (s["datum"], s["name"], jetzt, s["extern_id"]))
+                continue
 
-        r = _passender_termin(s, kandidaten, verknuepft)
-        if r:
-            # Erstes Zusammentreffen: Termin an die Quelle angleichen, ohne ihn als verschoben zu markieren
-            aenderung = {}
-            if r["datum"] != s["datum"] or r["genauigkeit"] != "tag":
-                aenderung.update({"datum": s["datum"], "genauigkeit": "tag", "notiz": s["notiz"]})
-            if r["status"] in ("geruecht", "angekuendigt"):
-                aenderung["status"] = "bestaetigt"
-            if re.search(r"ohne namen|unbenannt|tba", r["name"], re.I):
-                aenderung["name"] = s["name"]
-            if not r.get("code") and s.get("code"):
-                aenderung["code"] = s["code"]
-            if aenderung:
-                db.aendern(r["id"], aenderung, korrektur=True)
-                ergebnis["geaendert"] += 1
-            rid = r["id"]
-        else:
-            rid = db.anlegen({k: s[k] for k in ("spiel", "name", "code", "typ", "datum", "quelle", "notiz")}
-                             | {"genauigkeit": "tag", "status": "bestaetigt"})
-            ergebnis["neu"] += 1
-        verknuepft.add(rid)
-        with db.verbindung() as con:
-            con.execute("INSERT INTO quellen_stand (extern_id, release_id, datum, name, gesehen) VALUES (?,?,?,?,?)",
-                        (s["extern_id"], rid, s["datum"], s["name"], jetzt))
+            r = _passender_termin(s, kandidaten_je_spiel[s["spiel"]], verknuepft)
+            if r:
+                aenderung = {}
+                if angleichen and not historie:
+                    # Erstes Zusammentreffen: Termin an die Quelle angleichen, ohne ihn als verschoben zu markieren
+                    if r["datum"] != s["datum"] or r["genauigkeit"] != "tag":
+                        aenderung.update({"datum": s["datum"], "genauigkeit": "tag", "notiz": s["notiz"]})
+                    if r["status"] in ("geruecht", "angekuendigt") and s.get("status", "bestaetigt") == "bestaetigt":
+                        aenderung["status"] = "bestaetigt"
+                    if _PLATZHALTER.search(r["name"]):
+                        aenderung["name"] = s["name"]
+                if not r.get("code") and s.get("code"):
+                    aenderung["code"] = s["code"]
+                if aenderung:
+                    db.aendern(r["id"], aenderung, korrektur=True)
+                    ergebnis["geaendert"] += 1
+                rid = r["id"]
+            else:
+                daten = {k: s[k] for k in ("spiel", "name", "code", "typ", "datum", "quelle", "notiz")}
+                daten |= {"genauigkeit": "tag", "status": s.get("status", "bestaetigt")}
+                # Ins Änderungsprotokoll kommt nur, was noch bevorsteht
+                rid = db.anlegen(daten, protokoll=s["datum"] >= heute)
+                ergebnis["neu"] += 1
+            verknuepft.add(rid)
+            with db.verbindung() as con:
+                con.execute("INSERT INTO quellen_stand (extern_id, release_id, datum, name, gesehen) VALUES (?,?,?,?,?)",
+                            (s["extern_id"], rid, s["datum"], s["name"], jetzt))
+    finally:
+        if token is not None:
+            db.STUMM.reset(token)
     return ergebnis
 
 
@@ -354,11 +467,11 @@ def abgleichen(nur: str | None = None) -> str:
             if name not in aktiv or (nur and nur != name):
                 continue
             try:
-                e = abgleich_spiel(q["funktion"](ab))
-                teile.append(f"{QUELLEN_TEXT[name]}: {e['neu']} neu, {e['geaendert']} aktualisiert")
+                e = abgleich(q["funktion"](ab), angleichen=name not in NUR_VERKNUEPFEN)
+                teile.append(f"{QUELLEN[name]['text']}: {e['neu']} neu, {e['geaendert']} aktualisiert")
             except Exception as ex:  # noqa: BLE001
                 log.exception("Abgleich mit %s fehlgeschlagen", name)
-                teile.append(f"{QUELLEN_TEXT[name]}: Fehler – {ex}")
+                teile.append(f"{QUELLEN[name]['text']}: Fehler – {ex}")
         db.meta_set("letzter_abgleich", datetime.now(timezone.utc).isoformat())
         msg = " | ".join(teile) or "Keine Datenquelle aktiv."
         db.meta_set("letzter_abgleich_meldung", msg)
@@ -370,23 +483,67 @@ def abgleichen(nur: str | None = None) -> str:
         _lock.release()
 
 
+# --- Historie ---------------------------------------------------------------------
+
+def historie_stand() -> dict:
+    try:
+        return json.loads(db.meta_get("historie") or "{}")
+    except ValueError:
+        return {}
+
+
+def historie_importieren(nur: str | None = None, erzwingen: bool = False) -> str:
+    """Importiert einmalig alle vergangenen (und bekannten kommenden) Sets je Quelle.
+    Läuft unabhängig davon, ob die Quelle für den regelmäßigen Abgleich aktiv ist."""
+    if not _lock.acquire(blocking=False):
+        return "Ein Abgleich läuft bereits."
+    status["historie_laeuft"] = True
+    try:
+        stand = historie_stand()
+        vorhanden = {s["id"] for s in db.spiele()}
+        teile = []
+        for name, q in QUELLEN.items():
+            if nur and nur != name:
+                continue
+            if not set(q["spiele"]) & vorhanden:
+                continue
+            if stand.get(name) and not erzwingen:
+                continue
+            try:
+                e = abgleich(q["funktion"](ANFANG, True), historie=True)
+                stand[name] = {"zeit": datetime.now(timezone.utc).isoformat(),
+                               "neu": (stand.get(name) or {}).get("neu", 0) + e["neu"]}
+                db.meta_set("historie", json.dumps(stand))
+                teile.append(f"{QUELLEN[name]['text']}: {e['neu']} Sets übernommen")
+            except Exception as ex:  # noqa: BLE001
+                log.exception("Historie von %s fehlgeschlagen", name)
+                teile.append(f"{QUELLEN[name]['text']}: Fehler – {ex}")
+        msg = " | ".join(teile) or "Historie ist bereits vollständig importiert."
+        db.meta_set("historie_meldung", msg)
+        log.info("Historie: %s", msg)
+        return msg
+    finally:
+        status["historie_laeuft"] = False
+        _lock.release()
+
+
 def info() -> dict:
     return {
         "aktiv": sorted(aktive()),
-        "texte": QUELLEN_TEXT,
-        "alle": [{"id": k, "text": v["text"], "spiel": v["spiel"]} for k, v in QUELLEN.items()],
+        "texte": {k: v["text"] for k, v in QUELLEN.items()},
+        "alle": [{"id": k, "text": v["text"], "spiele": v["spiele"]} for k, v in QUELLEN.items()],
         "intervall_stunden": INTERVALL_STUNDEN,
         "laeuft": status["laeuft"],
         "letzter_abgleich": db.meta_get("letzter_abgleich"),
         "letzte_meldung": status["letzte_meldung"] or db.meta_get("letzter_abgleich_meldung"),
+        "historie": historie_stand(),
+        "historie_laeuft": status["historie_laeuft"],
+        "historie_meldung": db.meta_get("historie_meldung"),
+        "historie_aktiv": HISTORIE_AKTIV,
     }
 
 
 def starte_hintergrund():
-    if INTERVALL_STUNDEN <= 0:
-        log.info("Datenquellen-Abgleich deaktiviert.")
-        return
-
     def faellig() -> bool:
         letzte = db.meta_get("letzter_abgleich")
         if not letzte:
@@ -395,6 +552,14 @@ def starte_hintergrund():
 
     def schleife():
         time.sleep(15)
+        if HISTORIE_AKTIV:
+            try:
+                historie_importieren()
+            except Exception:  # noqa: BLE001
+                log.exception("Historie-Import fehlgeschlagen")
+        if INTERVALL_STUNDEN <= 0:
+            log.info("Regelmäßiger Datenquellen-Abgleich deaktiviert.")
+            return
         while True:
             try:
                 if aktive() and faellig():

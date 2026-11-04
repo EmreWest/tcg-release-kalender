@@ -1,5 +1,5 @@
 {
- "version": 2,
+ "version": 3,
  "spiele": [
   {
    "id": "pokemon",
@@ -423,11 +423,21 @@
   },
   {
    "spiel": "dbfw",
-   "name": "Starter Decks FS13 & FS14",
+   "name": "Starter Deck 13: The Saiyan Raised on Earth",
    "typ": "deck",
    "datum": "2027-01-22",
    "status": "angekuendigt",
-   "quelle": "https://www.akihabaratcgwarehouse.com/release-calendar/"
+   "quelle": "https://www.akihabaratcgwarehouse.com/release-calendar/",
+   "code": "FS13"
+  },
+  {
+   "spiel": "dbfw",
+   "name": "Starter Deck 14: The Prince of Saiyan",
+   "typ": "deck",
+   "datum": "2027-01-22",
+   "status": "angekuendigt",
+   "quelle": "https://www.akihabaratcgwarehouse.com/release-calendar/",
+   "code": "FS14"
   },
   {
    "spiel": "fab",
@@ -596,11 +606,31 @@
   },
   {
    "spiel": "cyberpunk",
-   "name": "Starter Decks: Embracing Power & The Heist",
+   "name": "Embracing Power Starter Deck",
    "typ": "deck",
    "datum": "2026-11-06",
    "status": "angekuendigt",
    "quelle": "https://sparkl.gg/release-calendar/"
+  },
+  {
+   "spiel": "cyberpunk",
+   "name": "The Heist Starter Deck",
+   "typ": "deck",
+   "datum": "2026-11-06",
+   "status": "angekuendigt",
+   "quelle": "https://sparkl.gg/release-calendar/"
+  }
+ ],
+ "entfernt": [
+  {
+   "spiel": "dbfw",
+   "name": "Starter Decks FS13 & FS14",
+   "seit": 3
+  },
+  {
+   "spiel": "cyberpunk",
+   "name": "Starter Decks: Embracing Power & The Heist",
+   "seit": 3
   }
  ]
 }

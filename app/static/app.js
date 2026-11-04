@@ -5,21 +5,28 @@ const WT_KURZ = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 const WT_LANG = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
 const MON = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const STANDARD_STATUS = ["geruecht", "angekuendigt", "bestaetigt", "verschoben", "erschienen"];
-const ANSICHTEN = ["liste", "monat", "woche", "aenderungen"];
+const ANSICHTEN = ["liste", "monat", "woche", "archiv", "aenderungen"];
+const RUECKBLICK_TAGE = 45;  // so weit zurück lädt die Seite Termine direkt, Älteres kommt aus dem Archiv
+const ARCHIV_SCHRITT = 250;
 const ART_TEXT = { neu: "Neu", verschoben: "Termin geändert", geaendert: "Aktualisiert", geloescht: "Entfernt" };
 
 let META = null;
 let DATEN = [];
+let ARCHIV = null;          // vergangene Releases, erst bei Bedarf geladen
+let ARCHIV_LADEN = null;    // laufender Ladevorgang
+let ALLE_CACHE = null;
 let AENDERUNGEN = null;
 let VORHER_BESUCH = null;
 
 const zustand = {
   ansicht: "liste",
   spiele: new Set(), status: new Set(), typ: new Set(),
-  prerelease: false, ungenau: true, vergangen: false, suche: "",
+  prerelease: false, ungenau: true, suche: "",
   monat: null,      // Date, 1. des Monats
   woche: null,      // Date, Montag
   tag: null,        // ISO-Datum des gewählten Tags in der Monatsansicht
+  archivJahr: "",   // "" = alle Jahre
+  archivAnzahl: ARCHIV_SCHRITT,
 };
 
 // --- Hilfen -------------------------------------------------------------------
@@ -72,7 +79,7 @@ function speicherSchreiben(k, v) { if (!komfortErlaubt()) return; try { localSto
 function besuchMerken() { speicherSchreiben("tcg-letzter-besuch", new Date().toISOString().replace(/\.\d+Z$/, "Z")); }
 
 function markierung(r) {
-  if (!VORHER_BESUCH) return "";
+  if (!VORHER_BESUCH || r.datum < iso(heute())) return "";
   if (r.erstellt > VORHER_BESUCH) return `<span class="badge neu">Neu</span>`;
   if (r.sequenz > 0 && r.geaendert > VORHER_BESUCH) return `<span class="badge geaendert">Geändert</span>`;
   return "";
@@ -90,9 +97,41 @@ function passt(r) {
 }
 
 // Termine als Kalendereinträge: Release-Tag und optional Prerelease-Tag
+// Geladene Termine plus Archiv (falls schon geladen), ohne Doppelte
+function alleTermine() {
+  if (!ARCHIV) return DATEN;
+  if (!ALLE_CACHE) {
+    const ids = new Set(DATEN.map((r) => r.id));
+    ALLE_CACHE = DATEN.concat(ARCHIV.filter((r) => !ids.has(r.id)));
+  }
+  return ALLE_CACHE;
+}
+function archivLaden() {
+  if (ARCHIV) return Promise.resolve(ARCHIV);
+  if (!ARCHIV_LADEN) {
+    ARCHIV_LADEN = fetch("/api/archiv").then((r) => r.json()).then((d) => {
+      const spiele = Object.fromEntries(META.spiele.map((s) => [s.id, s]));
+      ARCHIV = d.releases.filter((r) => spiele[r.spiel]).map((r) => ({
+        ...r, spiel_name: spiele[r.spiel].name, spiel_farbe: spiele[r.spiel].farbe, status_effektiv: "erschienen",
+      }));
+      ALLE_CACHE = null;
+      return ARCHIV;
+    }).catch((e) => { ARCHIV_LADEN = null; throw e; });
+  }
+  return ARCHIV_LADEN;
+}
+// Kalender braucht ältere Termine, als direkt geladen wurden -> Archiv nachladen
+function archivFuerZeitraum(start) {
+  if (ARCHIV || iso(start) >= iso(plusTage(heute(), -RUECKBLICK_TAGE + 1))) return;
+  archivLaden().then(() => { if (zustand.ansicht === "monat" || zustand.ansicht === "woche") rendern(); }).catch(() => {});
+}
+function istKommend(r) {
+  return r.genauigkeit === "tag" ? r.datum >= iso(heute()) : r.status_effektiv !== "erschienen";
+}
+
 function eintraege() {
   const out = [];
-  for (const r of DATEN) {
+  for (const r of alleTermine()) {
     if (!passt(r)) continue;
     if (r.genauigkeit === "tag") out.push({ r, tag: r.datum, pre: false });
     if (zustand.prerelease && r.prerelease) out.push({ r, tag: r.prerelease, pre: true });
@@ -139,7 +178,6 @@ function filterBauen() {
   Object.entries(META.typen).forEach(([k, v]) => ty.append(chip("typ", k, v)));
   $("#f-prerelease").checked = zustand.prerelease;
   $("#f-ungenau").checked = zustand.ungenau;
-  $("#f-vergangen").checked = zustand.vergangen;
   $("#f-suche").value = zustand.suche;
 }
 
@@ -159,7 +197,7 @@ function filterParams(fuerAbo) {
   if (zustand.prerelease) p.set("prerelease", "1");
   if (!zustand.ungenau) p.set("ungenau", "0");
   if (!fuerAbo) {
-    if (zustand.vergangen) p.set("vergangen", "1");
+    if (zustand.ansicht === "archiv" && zustand.archivJahr) p.set("jahr", zustand.archivJahr);
     if (zustand.suche) p.set("suche", zustand.suche);
     if (zustand.ansicht !== "liste") p.set("ansicht", zustand.ansicht);
     if (zustand.ansicht === "monat" && zustand.monat) p.set("monat", iso(zustand.monat).slice(0, 7));
@@ -177,13 +215,13 @@ function urlSchreiben(detailId) {
 function einstellungenSpeichern() {
   speicherSchreiben("tcg-filter", JSON.stringify({
     spiele: [...zustand.spiele], status: [...zustand.status], typ: [...zustand.typ],
-    prerelease: zustand.prerelease, ungenau: zustand.ungenau, vergangen: zustand.vergangen,
+    prerelease: zustand.prerelease, ungenau: zustand.ungenau,
     ansicht: zustand.ansicht, bekannteSpiele: alleIds("spiele"),
   }));
 }
 function einstellungenLaden() {
   const p = new URLSearchParams(location.search);
-  const filterImLink = ["spiele", "status", "typ", "prerelease", "ungenau", "vergangen", "suche"].some((k) => p.has(k));
+  const filterImLink = ["spiele", "status", "typ", "prerelease", "ungenau", "suche"].some((k) => p.has(k));
   let gesp = null;
   try { gesp = JSON.parse(speicherLesen("tcg-filter") || "null"); } catch (e) { gesp = null; }
 
@@ -194,7 +232,7 @@ function einstellungenLaden() {
     setze("typ", p.has("typ") ? p.get("typ").split(",") : alleIds("typ"));
     zustand.prerelease = p.get("prerelease") === "1";
     zustand.ungenau = p.get("ungenau") !== "0";
-    zustand.vergangen = p.get("vergangen") === "1";
+
     zustand.suche = p.get("suche") || "";
   } else if (gesp) {
     // Spiele, die nach dem letzten Besuch neu dazugekommen sind, standardmäßig anzeigen
@@ -204,13 +242,14 @@ function einstellungenLaden() {
     setze("typ", gesp.typ);
     zustand.prerelease = !!gesp.prerelease;
     zustand.ungenau = gesp.ungenau !== false;
-    zustand.vergangen = !!gesp.vergangen;
+
   } else {
     setze("spiele", alleIds("spiele"));
     setze("status", STANDARD_STATUS);
     setze("typ", alleIds("typ"));
   }
-  const a = p.get("ansicht") || (gesp && gesp.ansicht) || "liste";
+  const a = p.get("ansicht") || (p.get("vergangen") === "1" ? "archiv" : "") || (gesp && gesp.ansicht) || "liste";
+  if (/^\d{4}$/.test(p.get("jahr") || "")) zustand.archivJahr = p.get("jahr");
   zustand.ansicht = ANSICHTEN.includes(a) ? a : "liste";
   const h = heute();
   zustand.monat = new Date(h.getFullYear(), h.getMonth(), 1);
@@ -230,17 +269,16 @@ function aktiveFilter() {
   if (zustand.suche) n++;
   if (zustand.prerelease) n++;
   if (!zustand.ungenau) n++;
-  if (zustand.vergangen) n++;
   return n;
 }
 function trefferAnzahl() {
-  const grenze = iso(plusTage(heute(), -14));
-  return DATEN.filter((r) => passt(r) && (zustand.vergangen || r.genauigkeit !== "tag" || r.datum >= grenze)).length;
+  if (zustand.ansicht === "archiv") return ARCHIV ? archivTreffer().length : 0;
+  return DATEN.filter((r) => passt(r) && istKommend(r)).length;
 }
 function filterZuruecksetzen() {
   for (const g of ["spiele", "typ"]) zustand[g] = new Set(alleIds(g));
   zustand.status = new Set(STANDARD_STATUS);
-  zustand.suche = ""; zustand.ungenau = true; zustand.prerelease = false; zustand.vergangen = false;
+  zustand.suche = ""; zustand.ungenau = true; zustand.prerelease = false;
   filterBauen(); aktualisieren();
 }
 
@@ -295,19 +333,19 @@ function karte(e) {
 }
 
 function listeRendern() {
-  const grenze = iso(plusTage(heute(), -14));
+  const h = iso(heute());
   const items = [];
   for (const r of DATEN) {
     if (!passt(r)) continue;
-    const aktuell = r.genauigkeit !== "tag" || r.datum >= grenze;
-    if (aktuell || zustand.vergangen) items.push({ r, tag: r.datum, pre: false });
-    if (zustand.prerelease && r.prerelease && (r.prerelease >= grenze || zustand.vergangen)) items.push({ r, tag: r.prerelease, pre: true });
+    if (istKommend(r)) items.push({ r, tag: r.datum, pre: false });
+    if (zustand.prerelease && r.prerelease && r.prerelease >= h) items.push({ r, tag: r.prerelease, pre: true });
   }
   items.sort((a, b) => a.tag.localeCompare(b.tag) || (a.r.genauigkeit === "tag" ? -1 : 1));
 
-  $("#leiste").innerHTML = `<h2>${zustand.vergangen ? "Alle Releases" : "Kommende Releases"}</h2>
+  $("#leiste").innerHTML = `<h2>Kommende Releases</h2>
     <span class="zaehler">${items.length} ${items.length === 1 ? "Termin" : "Termine"}</span>`;
-  if (!items.length) { $("#inhalt").innerHTML = leer(); return; }
+  const zumArchiv = `<div class="archiv-hinweis"><button type="button" class="knopf" data-ansicht="archiv">Vergangene Releases im Archiv ansehen</button></div>`;
+  if (!items.length) { $("#inhalt").innerHTML = leer() + zumArchiv; return; }
 
   let html = "", gruppe = "";
   for (const e of items) {
@@ -316,7 +354,7 @@ function listeRendern() {
     if (g !== gruppe) { html += `<div class="monat-kopf">${g}</div>`; gruppe = g; }
     html += karte(e);
   }
-  $("#inhalt").innerHTML = html;
+  $("#inhalt").innerHTML = html + zumArchiv;
 }
 
 function leer() {
@@ -333,8 +371,9 @@ function monatRendern() {
       <button type="button" class="icon-knopf" data-nav="0">Heute</button>
       <button type="button" class="icon-knopf" data-nav="1" aria-label="Nächster Monat">${pfeil("r")}</button>
     </div>`;
-  const tage = nachTag(eintraege());
   const start = montag(m);
+  archivFuerZeitraum(start);
+  const tage = nachTag(eintraege());
   const ende = plusTage(montag(new Date(jahr, mon + 1, 0)), 6);
   const h = iso(heute());
   if (zustand.tag && parse(zustand.tag).getMonth() !== mon) zustand.tag = null;
@@ -371,7 +410,7 @@ function monatRendern() {
 
   // Termine ohne festen Tag, die in diesen Monat fallen
   const q = Math.floor(mon / 3);
-  const ungenau = DATEN.filter((r) => passt(r) && r.genauigkeit !== "tag").filter((r) => {
+  const ungenau = alleTermine().filter((r) => passt(r) && r.genauigkeit !== "tag").filter((r) => {
     const d = parse(r.datum);
     if (d.getFullYear() !== jahr) return false;
     return r.genauigkeit === "monat" ? d.getMonth() === mon : Math.floor(d.getMonth() / 3) === q;
@@ -393,6 +432,7 @@ function wocheRendern() {
       <button type="button" class="icon-knopf" data-nav="0">Heute</button>
       <button type="button" class="icon-knopf" data-nav="1" aria-label="Nächste Woche">${pfeil("r")}</button>
     </div>`;
+  archivFuerZeitraum(w);
   const tage = nachTag(eintraege());
   const h = iso(heute());
   let html = `<div class="woche">`;
@@ -409,6 +449,73 @@ function wocheRendern() {
   }
   html += `</div>`;
   $("#inhalt").innerHTML = html;
+}
+
+// --- Archiv ---------------------------------------------------------------------------
+function archivTreffer() {
+  const q = zustand.suche.toLowerCase();
+  return ARCHIV.filter((r) => zustand.spiele.has(r.spiel) && zustand.typ.has(r.typ)
+    && (!zustand.archivJahr || r.datum.startsWith(zustand.archivJahr))
+    && (!q || `${r.name} ${r.code || ""} ${r.spiel_name}`.toLowerCase().includes(q)));
+}
+
+async function archivRendern() {
+  if (!ARCHIV) {
+    $("#leiste").innerHTML = `<h2>Archiv</h2>`;
+    $("#inhalt").innerHTML = `<div class="flaeche leer">Archiv wird geladen …</div>`;
+    try { await archivLaden(); } catch (e) {
+      $("#inhalt").innerHTML = `<div class="flaeche leer">Das Archiv konnte nicht geladen werden. Bitte Seite neu laden.</div>`;
+      return;
+    }
+    if (zustand.ansicht !== "archiv") return;
+    aboAktualisieren();
+  }
+  const jahre = [...new Set(ARCHIV.map((r) => r.datum.slice(0, 4)))].sort().reverse();
+  if (zustand.archivJahr && !jahre.includes(zustand.archivJahr)) zustand.archivJahr = "";
+  const treffer = archivTreffer();
+  $("#leiste").innerHTML = `<h2>Archiv <span class="zaehler">${treffer.length.toLocaleString("de-DE")} ${treffer.length === 1 ? "Release" : "Releases"}</span></h2>
+    <label class="jahr-wahl"><span class="nur-screenreader">Jahr</span>
+      <select id="archiv-jahr">
+        <option value="">Alle Jahre</option>
+        ${jahre.map((j) => `<option value="${j}" ${j === zustand.archivJahr ? "selected" : ""}>${j}</option>`).join("")}
+      </select></label>`;
+  $("#archiv-jahr").onchange = (e) => { zustand.archivJahr = e.target.value; zustand.archivAnzahl = ARCHIV_SCHRITT; aktualisieren(); };
+
+  if (!treffer.length) {
+    $("#inhalt").innerHTML = `<div class="flaeche leer">Im Archiv gibt es für diese Filter keine Releases.<br>
+      <button type="button" class="knopf" id="filter-zurueck">Filter zurücksetzen</button></div>`;
+    return;
+  }
+  const sichtbar = treffer.slice(0, zustand.archivAnzahl);
+  let html = "", jahr = "", monat = "";
+  for (const r of sichtbar) {
+    const d = parse(r.datum);
+    const j = String(d.getFullYear());
+    if (j !== jahr) {
+      if (jahr) html += `</div>`;
+      html += `<h3 class="archiv-jahr">${j}</h3><div class="flaeche archiv-liste">`;
+      jahr = j; monat = "";
+    }
+    const m = r.genauigkeit === "quartal" ? `Q${Math.floor(d.getMonth() / 3) + 1}` : MON[d.getMonth()];
+    if (m !== monat) { html += `<div class="archiv-monat">${m}</div>`; monat = m; }
+    const datum = r.genauigkeit === "tag" ? `${WT_KURZ[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.`
+      : (r.genauigkeit === "monat" ? "ca." : `ca. Q${Math.floor(d.getMonth() / 3) + 1}`);
+    html += `<button type="button" class="archiv-zeile" style="--c:${farbe(r.spiel_farbe)}" data-r="${r.id}">
+      <span class="archiv-datum">${datum}</span>
+      <span class="archiv-spiel">${logo(r.spiel, "logo-mini")}${esc(r.spiel_name)}</span>
+      <span class="archiv-name">${esc(r.name)}${r.code ? ` <span class="code">${esc(r.code)}</span>` : ""}</span>
+      <span class="archiv-typ">${esc(META.typen[r.typ] || r.typ)}</span>
+    </button>`;
+  }
+  html += `</div>`;
+  if (treffer.length > sichtbar.length) {
+    const rest = treffer.length - sichtbar.length;
+    html += `<div class="archiv-hinweis"><button type="button" class="knopf" id="archiv-mehr">
+      Weitere ${Math.min(rest, ARCHIV_SCHRITT)} von ${rest.toLocaleString("de-DE")} anzeigen</button></div>`;
+  }
+  $("#inhalt").innerHTML = html;
+  const mehr = $("#archiv-mehr");
+  if (mehr) mehr.onclick = () => { zustand.archivAnzahl += ARCHIV_SCHRITT; archivRendern(); };
 }
 
 async function aenderungenRendern() {
@@ -453,6 +560,7 @@ function rendern() {
   if (zustand.ansicht === "monat") monatRendern();
   else if (zustand.ansicht === "woche") wocheRendern();
   else if (zustand.ansicht === "aenderungen") aenderungenRendern();
+  else if (zustand.ansicht === "archiv") archivRendern();
   else listeRendern();
 }
 
@@ -518,9 +626,14 @@ async function detailZeigen(id) {
 
 // --- Ereignisse ---------------------------------------------------------------------
 function ereignisseBinden() {
-  document.querySelectorAll("[data-ansicht]").forEach((b) => (b.onclick = () => {
-    zustand.ansicht = b.dataset.ansicht; aktualisieren();
-  }));
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-ansicht]");
+    if (!b) return;
+    zustand.ansicht = b.dataset.ansicht;
+    zustand.archivAnzahl = ARCHIV_SCHRITT;
+    aktualisieren();
+    if (!b.closest(".segment")) window.scrollTo({ top: 0 });
+  });
   document.querySelectorAll("[data-alle]").forEach((b) => (b.onclick = () => {
     alleIds(b.dataset.alle).forEach((x) => zustand[b.dataset.alle].add(x)); filterBauen(); aktualisieren();
   }));
@@ -529,7 +642,6 @@ function ereignisseBinden() {
   }));
   $("#f-prerelease").onchange = (e) => { zustand.prerelease = e.target.checked; aktualisieren(); };
   $("#f-ungenau").onchange = (e) => { zustand.ungenau = e.target.checked; aktualisieren(); };
-  $("#f-vergangen").onchange = (e) => { zustand.vergangen = e.target.checked; aktualisieren(); };
   let suchTimer;
   $("#f-suche").oninput = (e) => { clearTimeout(suchTimer); suchTimer = setTimeout(() => { zustand.suche = e.target.value.trim(); aktualisieren(); }, 150); };
   $("#abo-kopieren").onclick = () => kopieren($("#abo-url").value, "Abo-Link kopiert");
@@ -580,7 +692,7 @@ function navigieren(richtung) {
   try {
     [META, DATEN] = await Promise.all([
       fetch("/api/meta").then((r) => r.json()),
-      fetch("/api/releases?rueckblick=400").then((r) => r.json()),
+      fetch(`/api/releases?rueckblick=${RUECKBLICK_TAGE}`).then((r) => r.json()),
     ]);
   } catch (e) {
     $("#inhalt").innerHTML = `<div class="flaeche leer">Die Termine konnten nicht geladen werden. Bitte Seite neu laden.</div>`;

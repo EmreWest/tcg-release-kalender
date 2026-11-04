@@ -135,6 +135,14 @@
       </div>
     </div>
     <div class="flaeche karte-innen">
+      <h2>Archiv (Historie)</h2>
+      <p class="hinweis" style="margin-top:0">Beim ersten Start werden alle vergangenen Sets aus den Datenquellen einmalig übernommen und bleiben danach dauerhaft gespeichert – auch für Quellen, die oben nicht für den laufenden Abgleich aktiv sind. Bereits vorhandene Termine werden nur verknüpft, nicht verändert; gelöschte kommen nicht wieder.</p>
+      <div id="historie-text" class="hinweis" style="font-size:14px"></div>
+      <div class="zeile" style="margin-top:10px">
+        <button class="knopf" id="historie-los" type="button">Historie erneut abrufen</button>
+      </div>
+    </div>
+    <div class="flaeche karte-innen">
       <h2>Automatische Recherche</h2>
       <div id="status-text" class="hinweis" style="font-size:14px"></div>
       <div class="zeile" style="margin-top:10px">
@@ -275,7 +283,9 @@ function renderTermine() {
   const grenze = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const rows = TERMINE.filter(r => (!q || (r.name + " " + r.spiel_name + " " + (r.code || "")).toLowerCase().includes(q))
     && (!sp || r.spiel === sp) && (alt || r.datum >= grenze || r.genauigkeit !== "tag"));
-  document.getElementById("termine").innerHTML = rows.length ? rows.map(r => `<tr>
+  const max = 400;
+  const gekuerzt = rows.length > max;
+  document.getElementById("termine").innerHTML = rows.length ? rows.slice(0, max).map(r => `<tr>
     <td style="white-space:nowrap">${fmt(r.datum)}${r.genauigkeit !== "tag" ? ` <span class="hinweis">(${esc(META.genauigkeit[r.genauigkeit])})</span>` : ""}</td>
     <td><span class="farbfeld" style="--c:${esc(r.spiel_farbe)}"></span> ${esc(r.spiel_name)}</td>
     <td>${esc(r.name)}${r.code ? ` <span class="hinweis">${esc(r.code)}</span>` : ""}</td>
@@ -283,6 +293,7 @@ function renderTermine() {
     <td><span class="badge ${r.status_effektiv}">${esc(META.status[r.status_effektiv])}</span></td>
     <td style="white-space:nowrap;text-align:right"><button class="knopf" data-bearb="${r.id}">Bearbeiten</button>
       <button class="knopf gefahr" data-del="${r.id}">Löschen</button></td></tr>`).join("")
+      + (gekuerzt ? `<tr><td colspan="6" class="hinweis">${rows.length - max} weitere – Suche oder Spielfilter verwenden.</td></tr>` : "")
     : `<tr><td colspan="6" class="hinweis">Keine Termine gefunden.</td></tr>`;
   document.querySelectorAll("[data-bearb]").forEach(b => b.onclick = () => {
     const r = TERMINE.find(x => x.id == b.dataset.bearb);
@@ -500,7 +511,7 @@ async function ladeStatus() {
   const liste = document.getElementById("quellen-liste");
   if (!liste.dataset.geladen || !q.laeuft) {
     liste.innerHTML = q.alle.map(x => `<label class="schalter"><input type="checkbox" data-quelle="${esc(x.id)}" ${q.aktiv.includes(x.id) ? "checked" : ""}>
-      ${esc(x.text)}${META.spiele.some(sp => sp.id === x.spiel) ? "" : ' <span class="hinweis" style="margin:0">(Spiel nicht angelegt)</span>'}</label>`).join("");
+      ${esc(x.text)}${x.spiele.some(id => META.spiele.some(sp => sp.id === id)) ? "" : ' <span class="hinweis" style="margin:0">(Spiel nicht angelegt)</span>'}</label>`).join("");
     liste.dataset.geladen = "1";
   }
   document.getElementById("quellen-text").innerHTML = q.aktiv.length
@@ -508,7 +519,14 @@ async function ladeStatus() {
        ${q.laeuft ? "<strong>Abgleich läuft …</strong>" : (q.letzte_meldung ? "Ergebnis: " + esc(q.letzte_meldung) : "")}`
     : "Alle Datenquellen sind ausgeschaltet.";
   document.getElementById("abgleichen").disabled = !q.aktiv.length || q.laeuft;
-  if (q.laeuft) setTimeout(() => { ladeStatus(); ladeTermine(); }, 4000);
+  const hist = Object.entries(q.historie || {});
+  document.getElementById("historie-text").innerHTML = q.historie_laeuft
+    ? "<strong>Historie wird importiert …</strong> Das dauert je nach Verbindung etwa eine Minute."
+    : (hist.length
+      ? `<table class="diff">${hist.map(([k, v]) => `<tr><td>${esc(q.texte[k] || k)}</td><td>${new Date(v.zeit).toLocaleDateString("de-DE")}</td><td>${v.neu} Sets übernommen</td></tr>`).join("")}</table>`
+      : (q.historie_aktiv ? "Noch nicht importiert – startet kurz nach dem Start des Containers automatisch." : "Automatischer Import ist mit <code>HISTORIE=0</code> abgeschaltet."));
+  document.getElementById("historie-los").disabled = q.laeuft || q.historie_laeuft;
+  if (q.laeuft || q.historie_laeuft) setTimeout(() => { ladeStatus(); ladeTermine(); }, 4000);
   const el = document.getElementById("status-text");
   const n = s.benachrichtigungen;
   document.getElementById("notify-text").innerHTML = (n.discord || n.webhook)
@@ -535,6 +553,12 @@ document.getElementById("quellen-speichern").onclick = async () => {
 document.getElementById("abgleichen").onclick = async () => {
   try { await api("/api/admin/quellen/abgleich", { method: "POST" }); toast("Abgleich gestartet"); setTimeout(ladeStatus, 500); }
   catch (e) { toast(e.message); }
+};
+document.getElementById("historie-los").onclick = async () => {
+  try {
+    const r = await api("/api/admin/quellen/historie", { method: "POST" });
+    toast(r.gestartet ? "Historie wird abgerufen" : r.meldung); setTimeout(ladeStatus, 500);
+  } catch (e) { toast(e.message); }
 };
 document.getElementById("pruefen").onclick = async () => {
   const sp = document.getElementById("pruef-spiel").value;

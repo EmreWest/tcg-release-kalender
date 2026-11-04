@@ -5,7 +5,8 @@ import os
 import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import date, datetime, timezone
+from contextvars import ContextVar
+from datetime import date, datetime, timedelta, timezone
 
 log = logging.getLogger("tcg-kalender.db")
 
@@ -84,6 +85,8 @@ CREATE TABLE IF NOT EXISTS aenderungen (
     details TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_aenderungen_zeit ON aenderungen(zeit);
+CREATE INDEX IF NOT EXISTS idx_releases_spiel_datum ON releases(spiel, datum);
+CREATE INDEX IF NOT EXISTS idx_releases_datum ON releases(datum);
 CREATE TABLE IF NOT EXISTS quellen_stand (
     extern_id TEXT PRIMARY KEY,
     release_id INTEGER,
@@ -99,6 +102,8 @@ CREATE TABLE IF NOT EXISTS meta (
 
 # Callbacks, die bei jeder protokollierten Änderung aufgerufen werden (z. B. Webhooks)
 BEOBACHTER: list = []
+# Während großer Importe (Historie) keine Benachrichtigungen verschicken
+STUMM: ContextVar[bool] = ContextVar("stumm", default=False)
 
 
 def jetzt() -> str:
@@ -141,6 +146,14 @@ def init():
     bisher = int(meta_get("seed_version") or 1)
     if bisher >= seed_version:
         return
+    # Alte, inzwischen aufgeteilte Startdaten-Einträge entfernen – nur wenn nie bearbeitet und nicht verknüpft
+    for e in seed.get("entfernt", []):
+        if int(e.get("seit", 1)) <= bisher:
+            continue
+        with verbindung() as con:
+            con.execute("DELETE FROM releases WHERE spiel = ? AND name = ? AND sequenz = 0 "
+                        "AND id NOT IN (SELECT release_id FROM quellen_stand WHERE release_id IS NOT NULL)",
+                        (e["spiel"], e["name"]))
     vorhanden = {s["id"] for s in spiele()}
     neue = [s for s in seed["spiele"] if int(s.get("seit", 1)) > bisher and s["id"] not in vorhanden]
     ids = {s["id"] for s in neue}
@@ -165,12 +178,27 @@ def _seed_einspielen(spiele_liste: list[dict], termine: list[dict], protokoll: b
         anlegen(r, protokoll=protokoll and r["datum"] >= heute)
 
 
+def zeitraum_ende(datum: str, genauigkeit: str) -> str:
+    """Letzter Tag des Zeitraums eines Termins (bei Tagesdatum der Tag selbst)."""
+    d = date.fromisoformat(datum)
+    if genauigkeit == "monat":
+        naechster = date(d.year + (d.month == 12), d.month % 12 + 1, 1)
+        return (naechster - timedelta(days=1)).isoformat()
+    if genauigkeit == "quartal":
+        q_ende_monat = ((d.month - 1) // 3) * 3 + 3
+        naechster = date(d.year + (q_ende_monat == 12), q_ende_monat % 12 + 1, 1)
+        return (naechster - timedelta(days=1)).isoformat()
+    return datum
+
+
 def ist_erschienen(r: dict) -> bool:
     if r["status"] in ("geruecht", "abgesagt"):
         return False
+    heute = date.today().isoformat()
     if r["genauigkeit"] != "tag":
-        return False
-    return r["datum"] <= date.today().isoformat()
+        # Monat oder Quartal gilt erst als erschienen, wenn der Zeitraum vorbei ist
+        return zeitraum_ende(r["datum"], r["genauigkeit"]) < heute
+    return r["datum"] <= heute
 
 
 def effektiver_status(r: dict) -> str:
@@ -303,6 +331,25 @@ def releases(spiele_filter=None, status_filter=None, typen_filter=None,
     return rows
 
 
+def archiv(spiele_filter=None, typen_filter=None) -> list[dict]:
+    """Vergangene Releases (erschienen), neueste zuerst, mit den für das Archiv nötigen Feldern."""
+    heute = date.today().isoformat()
+    sql = ("SELECT r.id, r.spiel, r.name, r.code, r.typ, r.datum, r.genauigkeit, r.status "
+           "FROM releases r JOIN spiele s ON s.id = r.spiel "
+           "WHERE r.status NOT IN ('geruecht', 'abgesagt') AND r.datum < ?")
+    args: list = [heute]
+    if spiele_filter:
+        sql += f" AND r.spiel IN ({','.join('?' * len(spiele_filter))})"
+        args += spiele_filter
+    if typen_filter:
+        sql += f" AND r.typ IN ({','.join('?' * len(typen_filter))})"
+        args += typen_filter
+    sql += " ORDER BY r.datum DESC, s.reihenfolge, r.name"
+    with verbindung() as con:
+        rows = [dict(r) for r in con.execute(sql, args)]
+    return [r for r in rows if ist_erschienen(r)]
+
+
 def release(rid: int, mit_spiel=False) -> dict | None:
     with verbindung() as con:
         if mit_spiel:
@@ -325,6 +372,8 @@ def _protokoll(art: str, r: dict, details: dict | None = None):
              json.dumps(details, ensure_ascii=False) if details else None),
         )
         eintrag_id = cur.lastrowid
+    if STUMM.get():
+        return
     eintrag = aenderung(eintrag_id)
     for b in BEOBACHTER:
         try:

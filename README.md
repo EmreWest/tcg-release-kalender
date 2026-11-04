@@ -7,6 +7,7 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 ## Funktionen
 
 - Liste, Monats- und Wochenansicht. Jedes Spiel hat eine eigene Farbe, ein Klick auf einen Termin zeigt alle Details.
+- Archiv mit allen vergangenen Releases, nach Jahr und Monat gruppiert und mit denselben Filtern durchsuchbar. Beim ersten Start werden einmalig die bisherigen Sets aller Spiele abgerufen (rund 1.900 Einträge seit 1993) und bleiben dauerhaft gespeichert.
 - Eigene Logos je Spiel: In der Verwaltung hochladen, sie erscheinen in den Filtern, an den Terminen und in der Detailansicht.
 - Kalender-Abo (`webcal://`) mit den gewählten Filtern; einzelne Termine lassen sich auch als `.ics`-Datei speichern.
 - Helles und dunkles Design (folgt standardmäßig der Systemeinstellung, umschaltbar).
@@ -18,7 +19,7 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 - Benachrichtigungen bei Änderungen per Discord-Webhook oder beliebigem JSON-Webhook.
 - Teilbare Links: Filter, Ansicht und geöffneter Termin stehen in der Adresse.
 - Verwaltung mit Passwortschutz: Termine und Spiele (Name, Farbe, Reihenfolge) pflegen, Vorschläge prüfen, JSON-Import und -Export.
-- Automatischer Abgleich mit offenen Daten-APIs für Magic, Yu-Gi-Oh!, Star Wars: Unlimited, Flesh and Blood und Pokémon (deutsche Ausgaben) – ohne Kosten und ohne manuelles Zutun.
+- Automatischer Abgleich mit offenen Daten-APIs für Magic, Yu-Gi-Oh!, Star Wars: Unlimited, Flesh and Blood und Pokémon (deutsche Ausgaben), optional zusätzlich mit dem TCGplayer-Katalog für alle übrigen Spiele – ohne Kosten und ohne manuelles Zutun.
 - Optional Recherche mit Claude für alle anderen Spiele: Neue Sets und Terminänderungen aus offiziellen Quellen werden automatisch übernommen, alles Unsichere landet als Vorschlag zur Prüfung.
 - Eigener Titel, Untertitel, Logo und Favicon, einstellbar in der Verwaltung.
 - Auf Mobilgeräten einmalig ein Hinweis mit Anleitung, wie man die Seite auf den Home-Bildschirm legt; sie startet dann wie eine App.
@@ -77,9 +78,11 @@ SEITENTITEL=TCG-Release-Kalender
 SEITENUNTERTITEL=
 
 # Startwert für die automatisch abgeglichenen Daten-APIs: alle, leer (= aus) oder eine Liste aus
-# scryfall, ygoprodeck, swudb, fabcube, tcgdex – danach in der Verwaltung unter „System“ umschaltbar
+# scryfall, ygoprodeck, swudb, fabcube, tcgdex, tcgcsv – danach in der Verwaltung unter „System“ umschaltbar
 QUELLEN=alle
 QUELLEN_INTERVALL_STUNDEN=12
+# Vergangene Releases beim ersten Start einmalig ins Archiv laden (1 = an, 0 = aus)
+HISTORIE=1
 
 # Optional: automatische Recherche mit Claude für alle anderen Spiele
 ANTHROPIC_API_KEY=
@@ -134,8 +137,9 @@ Alle Einstellungen laufen über Umgebungsvariablen (in der `.env`).
 | `UID_DOMAIN` | Domain für die eindeutigen IDs der Kalendereinträge. Nach dem ersten Abo nicht mehr ändern, sonst entstehen doppelte Einträge. | `tcg-kalender.local` |
 | `SEITENTITEL` | Startwert für Überschrift, Browser-Tab und Kalendername. Danach in der Verwaltung unter „Darstellung“ änderbar. | `TCG-Release-Kalender` |
 | `SEITENUNTERTITEL` | Startwert für den Untertitel | kurzer Beschreibungstext |
-| `QUELLEN` | Startwert für die aktiven Daten-APIs: `alle`, leer (= aus) oder kommagetrennt aus `scryfall`, `ygoprodeck`, `swudb`, `fabcube`, `tcgdex`. Danach in der Verwaltung unter „System“ umschaltbar. | `alle` |
+| `QUELLEN` | Startwert für die aktiven Daten-APIs: `alle`, leer (= aus) oder kommagetrennt aus `scryfall`, `ygoprodeck`, `swudb`, `fabcube`, `tcgdex`, `tcgcsv`. Danach in der Verwaltung unter „System“ umschaltbar. | `alle` |
 | `QUELLEN_INTERVALL_STUNDEN` | Abstand des Abgleichs in Stunden | `12` |
+| `HISTORIE` | Vergangene Releases beim ersten Start einmalig ins Archiv laden (`1`/`0`). Unabhängig von `QUELLEN`. | `1` |
 | `TZ` | Zeitzone des Containers | `Europe/Berlin` |
 | `ANTHROPIC_API_KEY` | Aktiviert die automatische Recherche (siehe unten) | leer |
 | `CLAUDE_MODEL` | Modell für die Recherche | `claude-sonnet-5-5` |
@@ -243,6 +247,7 @@ Für einige Spiele gibt es offene, frei nutzbare Daten-APIs. Der Container gleic
 | [SWU-DB](https://www.swu-db.com/api) | Star Wars: Unlimited | Hauptsets, Icons-Sets und Twin-Suns-Decks mit Release-Datum, oft Monate im Voraus |
 | [The FaB Cube](https://github.com/the-fab-cube/flesh-and-blood-cards) | Flesh and Blood | Booster-Sets, Armory-, Blitz- und Silver-Age-Decks, Mastery Packs, sobald sie im Datensatz stehen |
 | [TCGdex](https://tcgdex.dev/) | Pokémon | deutsche Ausgaben mit deutschem Set-Namen und Erscheinungsdatum; neue Sets erscheinen dort erst kurz vor Release |
+| [TCGCSV](https://tcgcsv.com/) (TCGplayer-Katalog) | One Piece, Lorcana, Riftbound, Gundam, Digimon, Dragon Ball Super Fusion World, Union Arena, Weiß Schwarz, Vanguard, Shadowverse: Evolve, hololive OCG, Final Fantasy, Sorcery, Grand Archive, Cyberpunk | Sets mit Termin laut TCGplayer (US-Handel), Promos und Prerelease-Karten ausgefiltert; kommende Sets oft erst wenige Wochen vorher. Bestehende Termine werden nur verknüpft, nicht angeglichen. |
 
 So arbeitet der Abgleich:
 
@@ -252,9 +257,23 @@ So arbeitet der Abgleich:
 - Deine manuellen Änderungen bleiben erhalten, solange sich der Wert in der Quelle nicht ändert.
 - Löschst du einen Termin in der Verwaltung, wird er nicht wieder angelegt.
 
-Unter Verwaltung → System siehst du das Ergebnis des letzten Abgleichs und kannst ihn sofort starten. Der Container braucht dafür ausgehenden Zugriff auf `api.scryfall.com`, `db.ygoprodeck.com`, `api.swu-db.com`, `raw.githubusercontent.com` und `api.tcgdex.net`.
+Unter Verwaltung → System siehst du das Ergebnis des letzten Abgleichs und kannst ihn sofort starten. Der Container braucht dafür ausgehenden Zugriff auf `api.scryfall.com`, `db.ygoprodeck.com`, `api.swu-db.com`, `raw.githubusercontent.com`, `api.tcgdex.net` und `tcgcsv.com`.
 
-Für One Piece, Lorcana, Digimon, Union Arena und die übrigen Spiele gibt es keine offenen Schnittstellen, die kommende Sets mit Datum kennen (geprüft wurden u. a. OPTCG-API, Lorcast, Lorcana-API, Grand Archive und Sorcery). Eigene Scraper für die Herstellerseiten sind bewusst nicht eingebaut: Sie brechen bei jedem Redesign, viele Seiten blocken automatisierte Abrufe, und manche Nutzungsbedingungen schließen sie aus. Für diese Spiele gibt es die Recherche mit Claude.
+Für One Piece, Lorcana, Digimon und die übrigen Spiele kennt der TCGplayer-Katalog kommende Sets meist erst kurz vor Release, und die Termine sind US-Termine. Herstellerankündigungen mit langem Vorlauf liefert dort die Recherche mit Claude. Eigene Scraper für die Herstellerseiten sind bewusst nicht eingebaut: Sie brechen bei jedem Redesign, viele Seiten blocken automatisierte Abrufe, und manche Nutzungsbedingungen schließen sie aus.
+
+### Archiv und einmaliger Historien-Import
+
+Vergangene Releases verschwinden aus der Liste und stehen im Archiv (Reiter „Archiv“). Monats- und Wochenansicht zeigen beim Zurückblättern ebenfalls die archivierten Termine.
+
+Beim ersten Start ruft der Container einmalig alle bisherigen Sets aus den Quellen oben ab – unabhängig davon, welche Quellen für den laufenden Abgleich aktiv sind. Das dauert etwa eine Minute. Danach liegen die Einträge dauerhaft in der Datenbank und werden nicht erneut abgerufen:
+
+- Vergangene Sets erscheinen nicht im Änderungsprotokoll und lösen keine Benachrichtigungen aus.
+- Bereits vorhandene Termine werden nur verknüpft; ihr Datum bleibt unverändert.
+- Gelöschte Einträge werden nicht wieder angelegt.
+
+Unter Verwaltung → System zeigt die Karte „Archiv (Historie)“, wann jede Quelle importiert wurde. Dort lässt sich der Import erneut anstoßen, etwa nach dem Anlegen eines neuen Spiels; bereits vorhandene Einträge werden dabei nicht doppelt angelegt. Mit `HISTORIE=0` entfällt der automatische Import beim Start.
+
+Hinweis zu alten Daten: Bei manchen frühen Sets (vor allem aus dem TCGplayer-Katalog) ist das Datum das US-Erscheinungsdatum oder das Datum, an dem das Set in den Katalog aufgenommen wurde. Einzelne Einträge lassen sich in der Verwaltung korrigieren.
 
 ## Automatische Recherche mit Claude (optional)
 
@@ -338,6 +357,7 @@ Alle öffentlichen Endpunkte liefern JSON bzw. Kalender- oder Feed-Dateien und b
 |---|---|
 | `GET /api/meta` | Spiele mit Farben, Status- und Typbezeichnungen |
 | `GET /api/releases` | Termine; Parameter `spiele`, `status`, `typ`, `rueckblick` (Tage) |
+| `GET /api/archiv` | vergangene Releases, neueste zuerst; Parameter `spiele`, `typ` |
 | `GET /api/releases/{id}` | ein Termin |
 | `GET /api/aenderungen` | Änderungsprotokoll; Parameter `spiele`, `limit` |
 | `GET /kalender.ics` | Kalender-Abo (Parameter siehe oben) |
@@ -376,7 +396,7 @@ Aufbau:
 | `app/atom.py` | Atom-Feed |
 | `app/notify.py` | Discord- und JSON-Webhooks |
 | `app/logos.py` | Hochgeladene Logos prüfen und speichern |
-| `app/quellen.py` | Abgleich mit Scryfall, YGOPRODeck, SWU-DB, The FaB Cube und TCGdex |
+| `app/quellen.py` | Abgleich und Historien-Import mit Scryfall, YGOPRODeck, SWU-DB, The FaB Cube, TCGdex und TCGCSV |
 | `app/einstellungen.py` | In der Verwaltung änderbare Einstellungen |
 | `app/rechtliches.py` | Vorlagen und Formatierung für Impressum und Datenschutz |
 | `app/static/hinweise.js` | Speicher-Hinweis und Home-Bildschirm-Hinweis |
