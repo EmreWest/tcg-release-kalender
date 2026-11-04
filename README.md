@@ -7,6 +7,7 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 ## Funktionen
 
 - Liste, Monats- und Wochenansicht. Jedes Spiel hat eine eigene Farbe, ein Klick auf einen Termin zeigt alle Details.
+- Die Leiste mit den Ansichten bleibt beim Scrollen oben stehen; „Heute“ (oder Taste T) springt in jeder Ansicht zum heutigen Datum.
 - Archiv mit allen vergangenen Releases, nach Jahr und Monat gruppiert und mit denselben Filtern durchsuchbar. Beim ersten Start werden einmalig die bisherigen Sets aller Spiele abgerufen (rund 1.900 Einträge seit 1993) und bleiben dauerhaft gespeichert.
 - Eigene Logos je Spiel: In der Verwaltung hochladen, sie erscheinen in den Filtern, an den Terminen und in der Detailansicht.
 - Kalender-Abo (`webcal://`) mit den gewählten Filtern; einzelne Termine lassen sich auch als `.ics`-Datei speichern.

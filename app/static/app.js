@@ -347,7 +347,9 @@ function listeRendern() {
   const zumArchiv = `<div class="archiv-hinweis"><button type="button" class="knopf" data-ansicht="archiv">Vergangene Releases im Archiv ansehen</button></div>`;
   if (!items.length) { $("#inhalt").innerHTML = leer() + zumArchiv; return; }
 
-  let html = "", gruppe = "";
+
+  const hd = heute();
+  let html = `<div class="heute-linie" id="heute-ziel"><span>Heute · ${WT_LANG[hd.getDay()]}, ${hd.getDate()}. ${MON[hd.getMonth()]} ${hd.getFullYear()}</span></div>`, gruppe = "";
   for (const e of items) {
     const d = parse(e.tag);
     const g = !e.pre && e.r.genauigkeit === "quartal" ? `Q${Math.floor(d.getMonth() / 3) + 1} ${d.getFullYear()}` : `${MON[d.getMonth()]} ${d.getFullYear()}`;
@@ -368,7 +370,6 @@ function monatRendern() {
   $("#leiste").innerHTML = `<h2>${MON[mon]} ${jahr}</h2>
     <div class="nav">
       <button type="button" class="icon-knopf" data-nav="-1" aria-label="Vorheriger Monat">${pfeil("l")}</button>
-      <button type="button" class="icon-knopf" data-nav="0">Heute</button>
       <button type="button" class="icon-knopf" data-nav="1" aria-label="Nächster Monat">${pfeil("r")}</button>
     </div>`;
   const start = montag(m);
@@ -429,7 +430,6 @@ function wocheRendern() {
   $("#leiste").innerHTML = `<h2>KW ${kw(w)} <span class="zaehler">${kurz(w)} – ${kurz(ende)}${ende.getFullYear()}</span></h2>
     <div class="nav">
       <button type="button" class="icon-knopf" data-nav="-1" aria-label="Vorherige Woche">${pfeil("l")}</button>
-      <button type="button" class="icon-knopf" data-nav="0">Heute</button>
       <button type="button" class="icon-knopf" data-nav="1" aria-label="Nächste Woche">${pfeil("r")}</button>
     </div>`;
   archivFuerZeitraum(w);
@@ -645,6 +645,13 @@ function ereignisseBinden() {
   let suchTimer;
   $("#f-suche").oninput = (e) => { clearTimeout(suchTimer); suchTimer = setTimeout(() => { zustand.suche = e.target.value.trim(); aktualisieren(); }, 150); };
   $("#abo-kopieren").onclick = () => kopieren($("#abo-url").value, "Abo-Link kopiert");
+  $("#heute-knopf").onclick = zuHeute;
+  $("#heute-zahl").textContent = heute().getDate();
+  // Schatten unter der angehefteten Ansichtsleiste
+  const bar = $("#ansicht-bar");
+  const angeheftet = () => bar.classList.toggle("angeheftet", bar.getBoundingClientRect().top <= 0 && window.scrollY > 0);
+  window.addEventListener("scroll", angeheftet, { passive: true });
+  angeheftet();
 
   $("#detail").addEventListener("close", () => urlSchreiben(null));
   $("#detail").addEventListener("click", (e) => { if (e.target === $("#detail")) $("#detail").close(); });
@@ -667,12 +674,39 @@ function ereignisseBinden() {
   document.addEventListener("keydown", (e) => {
     const zelle = e.target.closest && e.target.closest(".zelle");
     if (zelle && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); zustand.tag = zelle.dataset.tag; monatRendern(); $(`.zelle[data-tag="${zustand.tag}"]`).focus(); }
+    if (e.key.toLowerCase() === "t" && !e.altKey && !e.ctrlKey && !e.metaKey && !$("#detail").open
+        && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) zuHeute();
     if ((zustand.ansicht === "monat" || zustand.ansicht === "woche") && !$("#detail").open
         && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) {
       if (e.key === "ArrowLeft" && e.altKey) navigieren(-1);
       if (e.key === "ArrowRight" && e.altKey) navigieren(1);
     }
   });
+}
+
+// --- Heute ---------------------------------------------------------------------------
+function sanftScrollen(el, block = "start") {
+  if (!el) return;
+  el.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block });
+}
+
+async function zuHeute() {
+  const a = zustand.ansicht;
+  if (a === "monat" || a === "woche") {
+    navigieren(0);
+    const ziel = a === "woche" && matchMedia("(max-width: 1000px)").matches ? $(".woche-tag.heute") : $("#leiste");
+    sanftScrollen(ziel);
+    const z = $(a === "monat" ? ".zelle.heute" : ".woche-tag.heute");
+    if (z) { z.classList.remove("aufblitzen"); void z.offsetWidth; z.classList.add("aufblitzen"); }
+    return;
+  }
+  if (a === "archiv") {
+    // neueste vergangene Releases oben
+    zustand.archivJahr = ""; zustand.archivAnzahl = ARCHIV_SCHRITT;
+    aboAktualisieren(); urlSchreiben(detailOffen()); einstellungenSpeichern();
+    await archivRendern();
+  }
+  sanftScrollen($("#heute-ziel") || $("#leiste"));
 }
 
 function navigieren(richtung) {

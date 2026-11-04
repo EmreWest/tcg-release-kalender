@@ -478,3 +478,47 @@ img.logo { display: inline-block; object-fit: contain; flex: none; vertical-alig
   .segment::-webkit-scrollbar { display: none; }
   .segment button { flex: 1 0 auto; padding: 6px 9px; }
 }
+
+
+/* Angeheftete Ansichtsleiste mit „Heute“ */
+.ansicht-bar {
+  position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 10px;
+  margin: -8px -16px 16px; padding: 8px 16px; background: var(--bg);
+  transition: box-shadow .15s ease;
+}
+.ansicht-bar.angeheftet { box-shadow: 0 1px 0 var(--rand), 0 6px 14px -10px rgba(0,0,0,.35); }
+.ansicht-bar .segment { min-width: 0; }
+.heute-knopf {
+  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; flex: none;
+  border: 1px solid var(--rand); border-radius: 10px; background: var(--fl); color: var(--text);
+  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+}
+.heute-knopf:hover { border-color: var(--rand-stark); }
+.heute-icon { position: relative; display: inline-flex; width: 20px; height: 20px; color: var(--heute); }
+.heute-icon svg { width: 20px; height: 20px; }
+.heute-icon b { position: absolute; left: 0; right: 0; top: 9px; text-align: center; font-size: 8.5px; line-height: 1; font-weight: 750; font-variant-numeric: tabular-nums; }
+.kopf { margin-bottom: 16px; flex-wrap: nowrap; align-items: flex-start; }
+.kopf .marke { flex: 1; }
+.kopf-rechts { flex: none; }
+.filter { top: 68px; }
+#leiste, .woche-tag, #heute-ziel { scroll-margin-top: 64px; }
+
+.heute-linie { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; color: var(--heute); font-size: 12px; font-weight: 650; }
+.heute-linie::after { content: ""; flex: 1; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--heute) 45%, transparent); }
+
+@keyframes aufblitzen { 0% { box-shadow: inset 0 0 0 3px var(--heute); } 100% { box-shadow: inset 0 0 0 1px var(--heute); } }
+.aufblitzen { animation: aufblitzen 1.2s ease-out; }
+
+@media (max-width: 560px) {
+  .kopf-rechts { width: auto; }
+  .ansicht-bar { gap: 8px; margin-bottom: 14px; }
+  .ansicht-bar .segment { flex: 1; }
+  .ansicht-bar .segment button { padding: 6px 6px; }
+  .heute-knopf { width: 40px; padding: 0; justify-content: center; }
+  .heute-text { display: none; }
+  .heute-icon, .heute-icon svg { width: 22px; height: 22px; }
+  .heute-icon b { top: 10px; font-size: 9.5px; }
+}
+@media (max-width: 380px) {
+  .ansicht-bar .segment button { padding: 6px 5px; font-size: 12px; }
+}

@@ -27,16 +27,23 @@
       </div>
     </div>
     <div class="kopf-rechts">
-      <div class="segment" role="group" aria-label="Ansicht">
-        <button data-ansicht="liste" aria-pressed="true">Liste</button>
-        <button data-ansicht="monat" aria-pressed="false">Monat</button>
-        <button data-ansicht="woche" aria-pressed="false">Woche</button>
-        <button data-ansicht="archiv" aria-pressed="false">Archiv</button>
-        <button data-ansicht="aenderungen" aria-pressed="false">Änderungen</button>
-      </div>
       <button class="icon-knopf" id="design-knopf" type="button"></button>
     </div>
   </header>
+
+  <nav class="ansicht-bar" id="ansicht-bar" aria-label="Ansicht">
+    <div class="segment" role="group" aria-label="Ansicht">
+      <button data-ansicht="liste" aria-pressed="true">Liste</button>
+      <button data-ansicht="monat" aria-pressed="false">Monat</button>
+      <button data-ansicht="woche" aria-pressed="false">Woche</button>
+      <button data-ansicht="archiv" aria-pressed="false">Archiv</button>
+      <button data-ansicht="aenderungen" aria-pressed="false">Änderungen</button>
+    </div>
+    <button type="button" class="heute-knopf" id="heute-knopf" title="Zum heutigen Datum springen (Taste T)" aria-label="Heute">
+      <span class="heute-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M3 9.5h18M8 2.5v4M16 2.5v4"/></svg><b id="heute-zahl"></b></span>
+      <span class="heute-text">Heute</span>
+    </button>
+  </nav>
 
   <div class="layout">
     <details class="flaeche filter" id="filter-box" open>
