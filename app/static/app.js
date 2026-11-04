@@ -740,10 +740,17 @@ function navigieren(richtung) {
   });
   if (window.matchMedia("(max-width: 900px)").matches) $("#filter-box").open = false;
 
-  einstellungenLaden();
-  filterBauen();
-  ereignisseBinden();
-  aktualisieren();
+  try {
+    einstellungenLaden();
+    filterBauen();
+    ereignisseBinden();
+    aktualisieren();
+  } catch (e) {
+    // Lieber eine klare Meldung als eine leere Seite
+    console.error(e);
+    $("#inhalt").innerHTML = `<div class="flaeche leer">Die Ansicht konnte nicht aufgebaut werden.<br>
+      <button type="button" class="knopf" onclick="location.reload()">Seite neu laden</button></div>`;
+  }
   const r = new URLSearchParams(location.search).get("r");
   if (r) detailZeigen(r);
 })();

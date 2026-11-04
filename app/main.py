@@ -1,7 +1,9 @@
 import logging
 import os
 import secrets
+import hashlib
 import html
+import re
 import threading
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
@@ -22,6 +24,20 @@ ADMIN_PASSWORT = os.environ.get("ADMIN_PASSWORT", "")
 UID_DOMAIN = (os.environ.get("UID_DOMAIN") or "tcg-kalender.local")
 OEFFENTLICHE_URL = os.environ.get("OEFFENTLICHE_URL", "").rstrip("/")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
+
+
+def _static_version() -> str:
+    """Prüfsumme über alle Skripte und Stylesheets – ändert sich mit jedem Update."""
+    h = hashlib.sha256()
+    for name in sorted(os.listdir(STATIC)):
+        if name.endswith((".js", ".css")):
+            with open(os.path.join(STATIC, name), "rb") as f:
+                h.update(name.encode() + f.read())
+    return h.hexdigest()[:10]
+
+
+STATIC_VERSION = _static_version()
+_STATIC_VERWEIS = re.compile(r'(/static/[\w.-]+\.(?:js|css))(?=")')
 
 
 @asynccontextmanager
@@ -49,6 +65,11 @@ async def schutz(request: Request, call_next):
         if request.headers.get("x-admin-anfrage") != "1":
             return JSONResponse({"detail": "Header X-Admin-Anfrage fehlt"}, status_code=403)
     antwort = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        # Mit Versionsnummer dauerhaft cachen, ohne immer erst beim Server nachfragen –
+        # so passen HTML, Skripte und Styles nach einem Update immer zusammen.
+        antwort.headers["Cache-Control"] = ("public, max-age=31536000, immutable"
+                                            if request.query_params.get("v") == STATIC_VERSION else "no-cache")
     antwort.headers.setdefault("X-Content-Type-Options", "nosniff")
     antwort.headers.setdefault("Referrer-Policy", "same-origin")
     return antwort
@@ -108,6 +129,7 @@ def _seite(datei: str, extra: dict | None = None, status_code: int = 200) -> Res
     }
     for k, v in ersetzungen.items():
         inhalt = inhalt.replace(k, v)
+    inhalt = _STATIC_VERWEIS.sub(rf"\1?v={STATIC_VERSION}", inhalt)
     return Response(inhalt, media_type="text/html; charset=utf-8", status_code=status_code,
                     headers={"Cache-Control": "no-cache"})
 

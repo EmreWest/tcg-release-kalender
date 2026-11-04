@@ -436,3 +436,14 @@ def test_aufgeteilte_startdaten_bereinigt(client):
     namen = {r["name"] for r in db.releases(spiele_filter=["dbfw"], von="1900-01-01")}
     assert "Starter Decks FS13 & FS14" not in namen
     assert "Starter Deck 13: The Saiyan Raised on Earth" in namen
+
+
+def test_statische_dateien_versioniert(client):
+    from app import main
+    html_text = client.get("/").text
+    assert f"/static/app.js?v={main.STATIC_VERSION}" in html_text
+    assert f"/static/style.css?v={main.STATIC_VERSION}" in html_text
+    assert "/static/app.js\"" not in html_text
+    assert "immutable" in client.get(f"/static/app.js?v={main.STATIC_VERSION}").headers["cache-control"]
+    assert client.get("/static/app.js").headers["cache-control"] == "no-cache"
+    assert client.get("/static/app.js?v=alt").headers["cache-control"] == "no-cache"
