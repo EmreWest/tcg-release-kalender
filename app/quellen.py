@@ -455,6 +455,31 @@ def abgleich(sets: list[dict], historie: bool = False, angleichen: bool = True) 
     return ergebnis
 
 
+def verknuepfen(sets: list[dict]) -> int:
+    """Verknüpft Sets einer Quelle nur mit bereits vorhandenen Terminen – legt nichts an und ändert nichts.
+    Wird für die Kartenlisten gebraucht, die über diese Verknüpfung ihr Set in der Quelle finden."""
+    with db.verbindung() as con:
+        bekannt = {r["extern_id"] for r in con.execute("SELECT extern_id FROM quellen_stand")}
+        verknuepft = {r["release_id"] for r in con.execute("SELECT release_id FROM quellen_stand") if r["release_id"]}
+    kandidaten: dict[str, list[dict]] = {}
+    neu = 0
+    for s in sorted(sets, key=lambda x: (x["spiel"], x["datum"])):
+        if s["extern_id"] in bekannt:
+            continue
+        if s["spiel"] not in kandidaten:
+            kandidaten[s["spiel"]] = db.releases(spiele_filter=[s["spiel"]], von=ANFANG)
+        r = _passender_termin(s, kandidaten[s["spiel"]], verknuepft)
+        if not r:
+            continue
+        with db.verbindung() as con:
+            con.execute("INSERT OR IGNORE INTO quellen_stand (extern_id, release_id, datum, name, gesehen) VALUES (?,?,?,?,?)",
+                        (s["extern_id"], r["id"], s["datum"], s["name"], db.jetzt()))
+        bekannt.add(s["extern_id"])
+        verknuepft.add(r["id"])
+        neu += 1
+    return neu
+
+
 def abgleichen(nur: str | None = None) -> str:
     if not _lock.acquire(blocking=False):
         return "Abgleich läuft bereits."

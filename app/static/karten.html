@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartenliste – {{TITEL}}</title>
+<link rel="icon" type="{{FAVICON_TYP}}" href="{{FAVICON}}">
+{{APPLE_ICON}}
+<meta name="theme-color" content="#2a55c9">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="kopf">
+    <a class="marke marke-link" href="/">
+      {{KOPF_LOGO}}
+      <div>
+        <h1 class="{{TITEL_KLASSE}}">{{TITEL}}</h1>
+        <p class="unter">{{UNTERTITEL}}</p>
+      </div>
+    </a>
+    <div class="kopf-rechts">
+      <button class="icon-knopf" id="design-knopf" type="button"></button>
+    </div>
+  </header>
+
+  <a class="zurueck-link" id="zurueck" href="/">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    Zurück zum Kalender
+  </a>
+
+  <main id="karten-seite" aria-live="polite">
+    <div class="flaeche leer">Kartenliste wird geladen …</div>
+  </main>
+</div>
+
+<footer class="wrap fuss">{{FUSS}}</footer>
+
+<dialog id="karte-dlg" class="karte-dlg" aria-labelledby="karte-titel"></dialog>
+<script src="/static/hinweise.js" data-datenschutz="{{DATENSCHUTZ_URL}}"></script>
+<script src="/static/karten.js"></script>
+</body>
+</html>

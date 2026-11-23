@@ -14,7 +14,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import atom, checker, db, einstellungen, ics, logos, notify, quellen, rechtliches
+from . import atom, checker, db, einstellungen, ics, karten, logos, notify, quellen, rechtliches
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("tcg-kalender")
@@ -48,6 +48,7 @@ async def lifespan(_app: FastAPI):
         log.warning("ADMIN_PASSWORT ist nicht gesetzt – der Admin-Bereich ist gesperrt.")
     checker.starte_hintergrund()
     quellen.starte_hintergrund()
+    karten.starte_hintergrund()
     yield
 
 
@@ -222,7 +223,17 @@ def meta():
 def api_releases(spiele: str | None = None, status: str | None = None, typ: str | None = None,
                  rueckblick: int = Query(60, ge=0, le=3650)):
     von = (date.today() - timedelta(days=rueckblick)).isoformat()
-    return db.releases(_liste(spiele), _liste(status), _liste(typ), von)
+    return _mit_karten(db.releases(_liste(spiele), _liste(status), _liste(typ), von))
+
+
+def _mit_karten(rows: list[dict]) -> list[dict]:
+    """Ergänzt die Anzahl der Karten, wenn für das Spiel Kartenlisten freigeschaltet sind."""
+    anzahl = karten.anzahlen()
+    if anzahl:
+        for r in rows:
+            if anzahl.get(r["id"]):
+                r["karten"] = anzahl[r["id"]]
+    return rows
 
 
 @app.get("/api/releases/{rid}")
@@ -230,14 +241,39 @@ def api_release(rid: int):
     r = db.release(rid, mit_spiel=True)
     if not r:
         raise HTTPException(404, "Nicht gefunden")
-    return r
+    return _mit_karten([r])[0]
 
 
 @app.get("/api/archiv")
 def api_archiv(spiele: str | None = None, typ: str | None = None):
     """Alle vergangenen Releases, neueste zuerst. Spielname und Farbe ergänzt die Seite aus /api/meta."""
-    rows = db.archiv(_liste(spiele), _liste(typ))
+    rows = _mit_karten(db.archiv(_liste(spiele), _liste(typ)))
     return {"anzahl": len(rows), "releases": rows}
+
+
+@app.get("/api/karten/{rid}")
+def api_karten(rid: int):
+    daten = karten.liste(rid)
+    if not daten:
+        raise HTTPException(404, "Keine Kartenliste vorhanden")
+    return daten
+
+
+@app.get("/karten/{rid}", include_in_schema=False)
+def karten_seite(rid: int):
+    return _seite("karten.html", status_code=200 if karten.liste(rid) else 404)
+
+
+@app.get("/karten/bild/{spiel}/{datei}", include_in_schema=False)
+def karten_bild(spiel: str, datei: str):
+    pfad = karten.bild_pfad(spiel, datei) if karten.ist_aktiv(spiel) else None
+    if not pfad:
+        raise HTTPException(404, "Nicht gefunden")
+    return FileResponse(pfad, media_type="image/webp", headers={
+        # Der Dateiname ist ein Hash der Bildadresse – ein neuer Scan bekommt einen neuen Namen
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Security-Policy": "default-src 'none'",
+    })
 
 
 @app.get("/api/aenderungen")
@@ -368,6 +404,44 @@ def admin_abgleich(quelle: str | None = None, _=Depends(admin)):
         return {"gestartet": False, "meldung": "Abgleich läuft bereits."}
     threading.Thread(target=quellen.abgleichen, args=(quelle,), daemon=True).start()
     return {"gestartet": True}
+
+
+@app.get("/api/admin/karten")
+def admin_karten(_=Depends(admin)):
+    return karten.uebersicht()
+
+
+@app.put("/api/admin/karten/{spiel}")
+def admin_karten_freischalten(spiel: str, daten: dict = Body(...), _=Depends(admin)):
+    try:
+        karten.freischalten(spiel, bool(daten.get("aktiv")))
+    except ValueError as e:
+        _fehler(e)
+    return karten.uebersicht()
+
+
+@app.post("/api/admin/karten/{spiel}/abrufen")
+def admin_karten_abrufen(spiel: str, alle: bool = False, _=Depends(admin)):
+    if not karten.ist_aktiv(spiel):
+        raise HTTPException(400, "Kartenlisten sind für dieses Spiel nicht freigeschaltet")
+    if not karten.anstossen(spiel, alle):
+        return {"gestartet": False, "meldung": "Für dieses Spiel läuft bereits ein Abruf."}
+    return {"gestartet": True}
+
+
+@app.post("/api/admin/karten-abbrechen")
+def admin_karten_abbrechen(_=Depends(admin)):
+    karten.abbrechen()
+    return {"ok": True}
+
+
+@app.delete("/api/admin/karten/{spiel}")
+def admin_karten_loeschen(spiel: str, _=Depends(admin)):
+    try:
+        karten.loeschen(spiel)
+    except ValueError as e:
+        _fehler(e)
+    return karten.uebersicht()
 
 
 @app.get("/api/admin/releases")

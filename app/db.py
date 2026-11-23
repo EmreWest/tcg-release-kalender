@@ -94,6 +94,37 @@ CREATE TABLE IF NOT EXISTS quellen_stand (
     name TEXT,
     gesehen TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS kartenlisten (
+    release_id INTEGER PRIMARY KEY,
+    spiel TEXT NOT NULL,
+    extern_id TEXT NOT NULL,
+    anzahl INTEGER NOT NULL DEFAULT 0,
+    abgerufen TEXT,
+    fehler TEXT
+);
+CREATE TABLE IF NOT EXISTS karten (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    release_id INTEGER NOT NULL,
+    spiel TEXT NOT NULL,
+    pos INTEGER NOT NULL,
+    nummer TEXT,
+    name TEXT NOT NULL,
+    seltenheit TEXT,
+    art TEXT,
+    variante TEXT,
+    bild_url TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_karten_release ON karten(release_id, pos);
+CREATE INDEX IF NOT EXISTS idx_karten_spiel_bild ON karten(spiel, bild_url);
+CREATE TABLE IF NOT EXISTS kartenbilder (
+    url TEXT PRIMARY KEY,
+    spiel TEXT NOT NULL,
+    datei TEXT,
+    bytes INTEGER,
+    fehler INTEGER NOT NULL DEFAULT 0,
+    versucht TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_kartenbilder_spiel ON kartenbilder(spiel, datei);
 CREATE TABLE IF NOT EXISTS meta (
     schluessel TEXT PRIMARY KEY,
     wert TEXT
@@ -439,6 +470,8 @@ def loeschen(rid: int):
         return
     with verbindung() as con:
         con.execute("DELETE FROM releases WHERE id = ?", (rid,))
+        con.execute("DELETE FROM karten WHERE release_id = ?", (rid,))
+        con.execute("DELETE FROM kartenlisten WHERE release_id = ?", (rid,))
     _protokoll("geloescht", alt)
 
 

@@ -51,6 +51,8 @@ def standard() -> dict:
         "datenschutz": "",
         # None = Standard aus der Umgebungsvariable QUELLEN, sonst Liste aktiver Datenquellen
         "quellen_aktiv": None,
+        # Spiele, für die Kartenlisten mit Bildern freigeschaltet sind (Standard: keine)
+        "karten_spiele": [],
     }
 
 
@@ -109,6 +111,11 @@ def aendern(daten: dict) -> dict:
         if q is not None and (not isinstance(q, list) or not all(isinstance(x, str) for x in q)):
             raise ValueError("quellen_aktiv muss eine Liste sein")
         neu["quellen_aktiv"] = q
+    if "karten_spiele" in daten:
+        k = daten["karten_spiele"]
+        if not isinstance(k, list) or not all(isinstance(x, str) for x in k):
+            raise ValueError("karten_spiele muss eine Liste sein")
+        neu["karten_spiele"] = sorted(set(k))
     return _speichern(aktuell | neu)
 
 

@@ -525,3 +525,67 @@ img.logo { display: inline-block; object-fit: contain; flex: none; vertical-alig
 @media (max-width: 380px) {
   .ansicht-bar .segment button { padding: 6px 5px; font-size: 12px; }
 }
+
+/* Kartenlisten */
+.marke-link { color: inherit; text-decoration: none; }
+.zurueck-link { display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 550; text-decoration: none; margin: -6px 0 14px; }
+.zurueck-link svg { width: 16px; height: 16px; }
+.karten-kopf { overflow: hidden; }
+.karten-kopf-inhalt { padding: 14px 18px 16px; }
+.karten-kopf h2 { font-size: 26px; letter-spacing: -.02em; line-height: 1.2; margin: 4px 0 6px; }
+.karten-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--text2); font-size: 14px; }
+.karten-meta .code { color: var(--text3); }
+.karten-werkzeuge { display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; margin: 16px 0 12px; }
+.karten-werkzeuge .suche { flex: 1 1 260px; max-width: 420px; }
+.karten-werkzeuge select { width: auto; min-width: 170px; }
+.karten-zahl { font-size: 13px; color: var(--text2); }
+.karten-raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px 12px; }
+.karten-leer { grid-column: 1 / -1; }
+.kartenfeld {
+  display: flex; flex-direction: column; gap: 4px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer;
+  min-width: 0;
+}
+.kartenbild {
+  display: block; aspect-ratio: 63 / 88; border-radius: 4.5% / 3.3%; overflow: hidden; background: var(--fl2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .18); transition: transform .12s ease, box-shadow .12s ease;
+}
+.kartenbild img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.kartenfeld:hover .kartenbild { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0, 0, 0, .22); }
+.kartenbild-leer { display: flex; align-items: center; justify-content: center; height: 100%; padding: 10px; text-align: center; font-size: 13px; color: var(--text2); }
+.kartenzeile { display: flex; justify-content: space-between; gap: 6px; font-size: 11.5px; color: var(--text3); margin-top: 2px; }
+.kartennr { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kartensel { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+.kartenname { font-size: 13px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.kartenvariante { font-weight: 500; color: var(--text2); }
+.karten-quelle { margin-top: 22px; }
+dialog.karte-dlg { width: min(860px, calc(100vw - 24px)); }
+.karte-dlg-inhalt { position: relative; display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 22px; padding: 20px; }
+.karte-gross img { display: block; width: 100%; height: auto; max-height: calc(100vh - 80px); object-fit: contain; border-radius: 4.5% / 3.3%; }
+.karte-gross .kartenbild-leer { aspect-ratio: 63 / 88; background: var(--fl2); border-radius: 12px; }
+.karte-info h2 { font-size: 22px; line-height: 1.25; margin: 4px 44px 6px 0; }
+.karte-nav { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+.karte-nav .hinweis { margin: 0; }
+.karte-nav .knopf { padding: 6px 10px; }
+.karte-nav svg { width: 18px; height: 18px; }
+@media (max-width: 640px) {
+  .karten-raster { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px 8px; }
+  .kartenname { font-size: 12px; }
+  .karten-kopf h2 { font-size: 21px; }
+  .karte-dlg-inhalt { grid-template-columns: 1fr; padding: 14px; gap: 12px; }
+  .karte-gross img { max-height: 62vh; width: auto; max-width: 100%; margin: 0 auto; }
+}
+
+/* Hinweis auf Kartenliste in Liste und Archiv */
+.karten-hinweis { display: inline-flex; align-items: center; gap: 4px; }
+.karten-hinweis svg, .archiv-karten svg { width: 13px; height: 13px; }
+.archiv-karten { display: inline-flex; vertical-align: -2px; margin-left: 6px; color: var(--text3); }
+.karten-status { margin-top: 12px; padding: 12px; border: 1px solid var(--rand); border-radius: 10px; background: var(--fl2); font-size: 14px; }
+.fortschritt { height: 6px; border-radius: 3px; background: var(--fl3); overflow: hidden; margin-top: 8px; }
+.fortschritt i { display: block; height: 100%; background: var(--akzent); transition: width .3s ease; }
+.karten-tabelle td { vertical-align: top; }
+.karten-tabelle td:first-child { width: 230px; }
+@media (max-width: 760px) {
+  .karten-tabelle tr { display: grid; grid-template-columns: 1fr; border-bottom: 1px solid var(--rand); padding: 6px 0; }
+  .karten-tabelle td { border: 0; padding: 4px 6px; width: auto !important; }
+  .karten-tabelle td.aktionen .zeile { justify-content: flex-start !important; }
+}

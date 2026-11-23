@@ -20,6 +20,7 @@
     <button role="tab" data-tab="vorschlaege" aria-selected="true">Vorschläge <span id="anz-vorschlaege"></span></button>
     <button role="tab" data-tab="termine" aria-selected="false">Termine</button>
     <button role="tab" data-tab="spiele" aria-selected="false">Spiele</button>
+    <button role="tab" data-tab="karten" aria-selected="false">Kartenlisten</button>
     <button role="tab" data-tab="import" aria-selected="false">Import</button>
     <button role="tab" data-tab="darstellung" aria-selected="false">Darstellung</button>
     <button role="tab" data-tab="rechtliches" aria-selected="false">Rechtliches</button>
@@ -54,6 +55,22 @@
         <label>Farbe<input id="sp-farbe" type="color" value="#6b7280"></label>
       </div>
       <button class="knopf" id="sp-los" type="button" style="margin-top:10px">Spiel hinzufügen</button>
+    </div>
+  </section>
+
+  <section id="tab-karten" hidden>
+    <div class="flaeche karte-innen">
+      <h2>Kartenlisten mit Bildern</h2>
+      <p class="hinweis" style="margin-top:0">Für freigeschaltete Spiele bekommt jedes Set im Kalender einen Link zu seiner Kartenliste.
+        Listen und Bilder werden einmal abgerufen und im Datenverzeichnis gespeichert (<code>/data/karten</code>) – sie bleiben bei
+        Neustarts und Updates erhalten. Danach werden nur noch neue und kommende Sets aktualisiert und fehlende Bilder ergänzt.
+        Besucher laden alle Bilder von deinem Server, nie von fremden.</p>
+      <p class="hinweis">Ablauf: Spiel freischalten, dann „Daten abrufen“. Ohne Freischaltung ist auf der öffentlichen Seite nichts davon zu sehen.
+        Beim Ausschalten bleiben die Daten erhalten; „Löschen“ entfernt sie vollständig.</p>
+      <p class="hinweis">Hinweis: Die Kartenbilder sind urheberrechtlich geschützt (Hersteller der Spiele). Prüfe vor dem Freischalten, ob die Nutzung auf deiner Seite zulässig ist.</p>
+      <div id="karten-status" class="karten-status" hidden></div>
+      <div id="karten-liste" style="margin-top:12px"></div>
+      <div id="karten-gesamt" class="hinweis"></div>
     </div>
   </section>
 
@@ -213,6 +230,7 @@ document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
   document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b));
   document.querySelectorAll("section[id^=tab-]").forEach(s => s.hidden = s.id !== "tab-" + b.dataset.tab);
   if (b.dataset.tab === "system") ladeStatus();
+  if (b.dataset.tab === "karten") ladeKarten();
   if (["darstellung", "system", "rechtliches"].includes(b.dataset.tab)) ladeEinstellungen();
 });
 
@@ -565,6 +583,77 @@ document.getElementById("pruefen").onclick = async () => {
   try { await api("/api/admin/pruefen" + (sp ? "?spiel=" + sp : ""), { method: "POST" }); toast("Recherche gestartet"); setTimeout(ladeStatus, 500); }
   catch (e) { toast(e.message); }
 };
+
+// --- Kartenlisten ----------------------------------------------------------------
+const groesse = b => b >= 1e9 ? (b / 1e9).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " GB"
+  : (b / 1e6).toLocaleString("de-DE", { maximumFractionDigits: b < 1e7 ? 1 : 0 }) + " MB";
+const zahl = n => Number(n || 0).toLocaleString("de-DE");
+async function ladeKarten() {
+  let d;
+  try { d = await api("/api/admin/karten"); } catch (e) { toast(e.message); return; }
+  const st = d.status;
+  const box = document.getElementById("karten-status");
+  box.hidden = !st.laeuft;
+  if (st.laeuft) {
+    const anteil = st.gesamt ? Math.round(st.fertig / st.gesamt * 100) : 0;
+    box.innerHTML = `<div class="zeile zwischen"><strong>${esc(spielName(st.spiel))}: ${esc(st.schritt || "")} ${st.gesamt ? `${zahl(st.fertig)} / ${zahl(st.gesamt)}` : "…"}</strong>
+      <button class="knopf gefahr" type="button" id="karten-abbrechen">Abbrechen</button></div>
+      <div class="fortschritt"><i style="width:${anteil}%"></i></div>
+      ${d.warteschlange.length ? `<div class="hinweis">Danach: ${d.warteschlange.map(x => esc(spielName(x))).join(", ")}</div>` : ""}`;
+    document.getElementById("karten-abbrechen").onclick = async () => {
+      await api("/api/admin/karten-abbrechen", { method: "POST" }); toast("Wird nach dem aktuellen Schritt abgebrochen");
+    };
+  }
+  let summe = 0;
+  const zeilen = d.spiele.filter(s => s.unterstuetzt).map(s => {
+    summe += s.bytes || 0;
+    const laeuft = st.spiel === s.id, wartet = d.warteschlange.includes(s.id);
+    const hatDaten = s.karten > 0 || s.bilder_gesamt > 0;
+    let info = "Noch nichts abgerufen";
+    if (hatDaten) {
+      info = `${zahl(s.sets_mit_liste)} von ${zahl(s.sets_verknuepft)} Sets · ${zahl(s.karten)} Karten · ${zahl(s.bilder_lokal)} Bilder (${groesse(s.bytes || 0)})`;
+      const offen = s.bilder_gesamt - s.bilder_lokal - s.bilder_fehlen;
+      if (offen > 0) info += ` · ${zahl(offen)} Bilder ausstehend`;
+    }
+    let stand = "";
+    if (s.stand && s.stand.pausiert) stand = "Abgebrochen – „" + (hatDaten ? "Aktualisieren" : "Daten abrufen") + "“ macht an derselben Stelle weiter";
+    else if (s.stand && s.stand.zeit) stand = `Zuletzt: ${new Date(s.stand.zeit).toLocaleString("de-DE")}`;
+    else if (s.stand) stand = "Erster Abruf noch nicht abgeschlossen – läuft nach einem Neustart automatisch weiter";
+    return `<tr>
+      <td><label class="schalter" style="margin:0"><input type="checkbox" data-karten-an="${esc(s.id)}" ${s.aktiv ? "checked" : ""}> <b>${esc(s.name)}</b></label>
+        <div class="hinweis" style="margin:2px 0 0">Quelle: ${esc(s.quelle)}</div></td>
+      <td><div style="font-size:14px">${laeuft ? "<strong>Wird abgerufen …</strong>" : (wartet ? "In der Warteschlange" : info)}</div>
+        ${stand ? `<div class="hinweis" style="margin:2px 0 0">${esc(stand)}</div>` : ""}</td>
+      <td class="aktionen"><div class="zeile" style="justify-content:flex-end">
+        <button class="knopf primaer" type="button" data-karten-abrufen="${esc(s.id)}" ${!s.aktiv || laeuft || wartet ? "disabled" : ""}>${hatDaten ? "Aktualisieren" : "Daten abrufen"}</button>
+        ${hatDaten ? `<button class="knopf" type="button" data-karten-alle="${esc(s.id)}" ${!s.aktiv || laeuft || wartet ? "disabled" : ""} title="Auch die Listen älterer Sets neu laden; vorhandene Bilder werden nicht erneut geladen">Alle Listen neu</button>
+          <button class="knopf gefahr" type="button" data-karten-loeschen="${esc(s.id)}" ${laeuft ? "disabled" : ""}>Löschen</button>` : ""}
+      </div></td></tr>`;
+  }).join("");
+  document.getElementById("karten-liste").innerHTML = `<div class="tabelle-wrap"><table class="daten karten-tabelle"><tbody>${zeilen}</tbody></table></div>`;
+  document.getElementById("karten-gesamt").innerHTML = `Belegter Speicher: ${groesse(summe)}` +
+    (d.frei_bytes != null ? ` · frei im Datenverzeichnis: ${groesse(d.frei_bytes)}` : "") +
+    (d.intervall_stunden > 0 ? ` · automatische Aktualisierung alle ${d.intervall_stunden} Stunden` : " · automatische Aktualisierung aus");
+  document.querySelectorAll("[data-karten-an]").forEach(x => x.onchange = async () => {
+    try { await api("/api/admin/karten/" + x.dataset.kartenAn, { method: "PUT", body: JSON.stringify({ aktiv: x.checked }) });
+      toast(x.checked ? "Freigeschaltet" : "Ausgeschaltet – die Daten bleiben gespeichert"); ladeKarten(); }
+    catch (e) { toast(e.message); x.checked = !x.checked; }
+  });
+  const abrufen = async (id, alle) => {
+    try { const r = await api(`/api/admin/karten/${id}/abrufen${alle ? "?alle=true" : ""}`, { method: "POST" });
+      toast(r.gestartet ? "Abruf gestartet" : r.meldung); setTimeout(ladeKarten, 500); }
+    catch (e) { toast(e.message); }
+  };
+  document.querySelectorAll("[data-karten-abrufen]").forEach(x => x.onclick = () => abrufen(x.dataset.kartenAbrufen, false));
+  document.querySelectorAll("[data-karten-alle]").forEach(x => x.onclick = () => abrufen(x.dataset.kartenAlle, true));
+  document.querySelectorAll("[data-karten-loeschen]").forEach(x => x.onclick = async () => {
+    if (!confirm(`Alle Kartenlisten und Bilder für ${spielName(x.dataset.kartenLoeschen)} löschen?`)) return;
+    try { await api("/api/admin/karten/" + x.dataset.kartenLoeschen, { method: "DELETE" }); toast("Gelöscht"); ladeKarten(); }
+    catch (e) { toast(e.message); }
+  });
+  clearTimeout(ladeKarten.t);
+  if (st.laeuft && !document.getElementById("tab-karten").hidden) ladeKarten.t = setTimeout(ladeKarten, 3000);
+}
 
 async function ladeMeta() {
   [META, SPIELE] = await Promise.all([api("/api/meta"), api("/api/admin/spiele")]);

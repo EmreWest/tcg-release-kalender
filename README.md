@@ -9,6 +9,7 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 - Liste, Monats- und Wochenansicht. Jedes Spiel hat eine eigene Farbe, ein Klick auf einen Termin zeigt alle Details.
 - Die Leiste mit den Ansichten bleibt beim Scrollen oben stehen; „Heute“ (oder Taste T) springt in jeder Ansicht zum heutigen Datum.
 - Archiv mit allen vergangenen Releases, nach Jahr und Monat gruppiert und mit denselben Filtern durchsuchbar. Beim ersten Start werden einmalig die bisherigen Sets aller Spiele abgerufen (rund 1.900 Einträge seit 1993) und bleiben dauerhaft gespeichert.
+- Optional Kartenlisten mit Bildern je Set, pro Spiel in der Verwaltung freischaltbar. Daten und Bilder werden einmal abgerufen und lokal gespeichert.
 - Eigene Logos je Spiel: In der Verwaltung hochladen, sie erscheinen in den Filtern, an den Terminen und in der Detailansicht.
 - Kalender-Abo (`webcal://`) mit den gewählten Filtern; einzelne Termine lassen sich auch als `.ics`-Datei speichern.
 - Helles und dunkles Design (folgt standardmäßig der Systemeinstellung, umschaltbar).
@@ -84,6 +85,8 @@ QUELLEN=alle
 QUELLEN_INTERVALL_STUNDEN=12
 # Vergangene Releases beim ersten Start einmalig ins Archiv laden (1 = an, 0 = aus)
 HISTORIE=1
+# Kartenlisten (in der Verwaltung je Spiel freischalten): Abstand der automatischen Aktualisierung, 0 = aus
+KARTEN_INTERVALL_STUNDEN=24
 
 # Optional: automatische Recherche mit Claude für alle anderen Spiele
 ANTHROPIC_API_KEY=
@@ -141,6 +144,7 @@ Alle Einstellungen laufen über Umgebungsvariablen (in der `.env`).
 | `QUELLEN` | Startwert für die aktiven Daten-APIs: `alle`, leer (= aus) oder kommagetrennt aus `scryfall`, `ygoprodeck`, `swudb`, `fabcube`, `tcgdex`, `tcgcsv`. Danach in der Verwaltung unter „System“ umschaltbar. | `alle` |
 | `QUELLEN_INTERVALL_STUNDEN` | Abstand des Abgleichs in Stunden | `12` |
 | `HISTORIE` | Vergangene Releases beim ersten Start einmalig ins Archiv laden (`1`/`0`). Unabhängig von `QUELLEN`. | `1` |
+| `KARTEN_INTERVALL_STUNDEN` | Abstand, in dem freigeschaltete Kartenlisten aktualisiert werden (neue Sets, Spoiler, fehlende Bilder); `0` = nur manuell | `24` |
 | `TZ` | Zeitzone des Containers | `Europe/Berlin` |
 | `ANTHROPIC_API_KEY` | Aktiviert die automatische Recherche (siehe unten) | leer |
 | `CLAUDE_MODEL` | Modell für die Recherche | `claude-sonnet-5-5` |
@@ -276,6 +280,43 @@ Unter Verwaltung → System zeigt die Karte „Archiv (Historie)“, wann jede Q
 
 Hinweis zu alten Daten: Bei manchen frühen Sets (vor allem aus dem TCGplayer-Katalog) ist das Datum das US-Erscheinungsdatum oder das Datum, an dem das Set in den Katalog aufgenommen wurde. Einzelne Einträge lassen sich in der Verwaltung korrigieren.
 
+## Kartenlisten mit Bildern (optional)
+
+Für jedes Spiel lässt sich unter Verwaltung → Kartenlisten eine Kartenliste je Set freischalten. Standardmäßig ist alles aus, und auf der öffentlichen Seite ist nichts davon zu sehen.
+
+Ablauf:
+
+1. Spiel freischalten (Haken setzen).
+2. „Daten abrufen“ klicken. Der Container ordnet die Sets im Kalender ihren Sets in der Datenquelle zu, lädt die Kartenlisten und danach alle Bilder. Der Fortschritt steht in der Verwaltung, ein Abruf lässt sich abbrechen und später fortsetzen.
+3. Danach hat jedes Set mit Kartenliste in der Detailansicht einen Knopf „Kartenliste“ (Seite `/karten/{id}`) und in Liste und Archiv einen kleinen Hinweis. Die Kartenseite bietet Suche, Filter nach Seltenheit und eine Großansicht mit Blättern (Pfeiltasten oder Wischen).
+
+Speicherung und Aktualisierung:
+
+- Listen liegen in der Datenbank, Bilder als WebP (400 px breit) unter `data/karten/`. Beides überlebt Neustarts, `docker compose pull` und neue Container.
+- Jedes Bild wird genau einmal geladen. Besucher laden Bilder nur von deinem Server, nie von fremden.
+- Automatisch (alle `KARTEN_INTERVALL_STUNDEN`) werden nur die Listen neuer und kommender Sets aktualisiert – dort kommen während der Spoiler-Phase laufend Karten dazu – und fehlende Bilder ergänzt. „Alle Listen neu“ lädt bei Bedarf auch ältere Listen neu, vorhandene Bilder bleiben.
+- Wird ein Container mitten im ersten Abruf neu gestartet, geht es nach etwa zwei Minuten automatisch weiter. Nach einem Abbruch in der Verwaltung geht es erst mit einem erneuten Klick weiter.
+- Ausschalten blendet alles aus, die Daten bleiben erhalten. „Löschen“ entfernt Listen und Bilder des Spiels vollständig.
+
+Datenquellen und Platzbedarf (alle Sets im Kalender, grob geschätzt):
+
+| Spiel | Quelle | Platz |
+|---|---|---|
+| Magic: The Gathering | Scryfall (rund 85.000 Karten inklusive Varianten, erster Abruf etwa 2 Stunden) | 4–5 GB |
+| Yu-Gi-Oh! | YGOPRODeck (Bilder werden wie dort verlangt einmal geladen und selbst ausgeliefert; Nachdrucke teilen sich ein Bild) | 0,5–1 GB |
+| Pokémon | TCGdex, deutsche Karten (der erste Abruf dauert wegen der Seltenheiten je Karte länger) | etwa 1 GB |
+| Star Wars: Unlimited | SWU-DB (inklusive Hyperspace-, Showcase- und Prestige-Varianten) | etwa 0,25 GB |
+| Flesh and Blood | The FaB Cube | etwa 0,5 GB |
+| Alle übrigen Spiele | TCGplayer-Katalog über TCGCSV | je nach Spiel 0,1–2 GB |
+
+Zusätzlich braucht der Container ausgehenden Zugriff auf `cards.scryfall.io`, `images.ygoprodeck.com`, `cdn.swu-db.com`, `assets.tcgdex.net`, `tcgplayer-cdn.tcgplayer.com` und `legendstory-production-s3-public.s3.amazonaws.com`.
+
+Hinweise:
+
+- Ein Set bekommt nur dann eine Kartenliste, wenn es einem Set in der Quelle zugeordnet werden kann (gleicher Name oder Set-Code). Manuell angelegte Termine mit abweichendem Namen bleiben ohne Liste.
+- Bei manchen Herstellern sind die Bilder Pressebilder mit „SAMPLE“-Aufdruck (z. B. One Piece, Dragon Ball Super, Gundam aus dem TCGplayer-Katalog).
+- Die Kartenbilder sind urheberrechtlich geschützt. Prüfe vor dem Freischalten, ob die Nutzung auf deiner Seite zulässig ist.
+
 ## Automatische Recherche mit Claude (optional)
 
 Mit gesetztem `ANTHROPIC_API_KEY` (erhältlich unter https://console.anthropic.com) durchsucht der Container im eingestellten Abstand für jedes Spiel einzeln das Web nach neuen Sets und Terminänderungen. Die Ergebnisse erscheinen als Vorschläge in der Verwaltung; ohne deine Bestätigung ändert sich nichts. Unter „System“ lässt sich ein Durchlauf auch sofort starten.
@@ -359,7 +400,9 @@ Alle öffentlichen Endpunkte liefern JSON bzw. Kalender- oder Feed-Dateien und b
 | `GET /api/meta` | Spiele mit Farben, Status- und Typbezeichnungen |
 | `GET /api/releases` | Termine; Parameter `spiele`, `status`, `typ`, `rueckblick` (Tage) |
 | `GET /api/archiv` | vergangene Releases, neueste zuerst; Parameter `spiele`, `typ` |
-| `GET /api/releases/{id}` | ein Termin |
+| `GET /api/releases/{id}` | ein Termin (mit `karten`, wenn eine Kartenliste freigeschaltet ist) |
+| `GET /api/karten/{id}` | Kartenliste eines Termins (nur für freigeschaltete Spiele) |
+| `GET /karten/{id}` | Kartenseite eines Sets |
 | `GET /api/aenderungen` | Änderungsprotokoll; Parameter `spiele`, `limit` |
 | `GET /kalender.ics` | Kalender-Abo (Parameter siehe oben) |
 | `GET /release/{id}.ics` | ein einzelner Termin als Kalenderdatei |
@@ -374,7 +417,7 @@ Schreibende Verwaltungs-Endpunkte unter `/api/admin/` erwarten Benutzer und Pass
 
 ## Datensicherung
 
-Es reicht, den Ordner `data` zu sichern (Datenbank und Logos). Alternativ unter System → „Alle Daten als JSON herunterladen“.
+Es reicht, den Ordner `data` zu sichern (Datenbank, Logos und Kartenbilder unter `data/karten`; die Bilder lassen sich notfalls auch neu abrufen). Alternativ unter System → „Alle Daten als JSON herunterladen“.
 
 ## Entwicklung und Betrieb ohne Docker
 
@@ -397,6 +440,7 @@ Aufbau:
 | `app/atom.py` | Atom-Feed |
 | `app/notify.py` | Discord- und JSON-Webhooks |
 | `app/logos.py` | Hochgeladene Logos prüfen und speichern |
+| `app/karten.py` | Kartenlisten und Kartenbilder: Abruf, Speicherung, Aktualisierung |
 | `app/quellen.py` | Abgleich und Historien-Import mit Scryfall, YGOPRODeck, SWU-DB, The FaB Cube, TCGdex und TCGCSV |
 | `app/einstellungen.py` | In der Verwaltung änderbare Einstellungen |
 | `app/rechtliches.py` | Vorlagen und Formatierung für Impressum und Datenschutz |

@@ -1,4 +1,5 @@
 import json
+import os
 import xml.dom.minidom
 
 import pytest
@@ -447,3 +448,137 @@ def test_statische_dateien_versioniert(client):
     assert "immutable" in client.get(f"/static/app.js?v={main.STATIC_VERSION}").headers["cache-control"]
     assert client.get("/static/app.js").headers["cache-control"] == "no-cache"
     assert client.get("/static/app.js?v=alt").headers["cache-control"] == "no-cache"
+
+
+# --- Kartenlisten ---------------------------------------------------------------------
+
+def _png(farbe=(200, 30, 30)) -> bytes:
+    import io
+    from PIL import Image
+    aus = io.BytesIO()
+    Image.new("RGB", (600, 838), farbe).save(aus, "PNG")
+    return aus.getvalue()
+
+
+def _kartenquelle(monkeypatch, release_id):
+    from app import karten
+
+    def verknuepfen(spiel):
+        with db.verbindung() as con:
+            con.execute("INSERT OR IGNORE INTO quellen_stand (extern_id, release_id, datum, name, gesehen) "
+                        "VALUES ('scryfall:abc', ?, '2026-11-20', 'Testset', 'x')", (release_id,))
+        return 1
+
+    liste = [
+        {"nummer": "10", "name": "Zehn", "seltenheit": "Rare", "art": "Creature", "bild_url": "https://cards.scryfall.io/n/10.jpg"},
+        {"nummer": "2", "name": "Zwei", "seltenheit": "Common", "bild_url": "https://cards.scryfall.io/n/2.jpg"},
+        {"nummer": "3", "name": "Fremd", "bild_url": "https://boese.example.com/x.jpg"},
+    ]
+    monkeypatch.setattr(karten, "sets_verknuepfen", verknuepfen)
+    monkeypatch.setattr(karten, "LISTEN", {**karten.LISTEN, "scryfall": lambda kennung, name, kontext: liste})
+    abrufe = []
+    monkeypatch.setattr(karten, "_herunterladen", lambda url: abrufe.append(url) or _png())
+    return abrufe
+
+
+def test_kartenlisten_standardmaessig_aus(client):
+    uebersicht = client.get("/api/admin/karten", auth=ADMIN).json()
+    assert uebersicht["spiele"] and not any(s["aktiv"] for s in uebersicht["spiele"])
+    rows = client.get("/api/releases?rueckblick=3650").json()
+    assert not any("karten" in r for r in rows)
+    assert client.get("/api/karten/1").status_code == 404
+    assert client.get("/karten/1").status_code == 404
+    # Abrufen geht erst nach dem Freischalten
+    assert client.post("/api/admin/karten/magic/abrufen", auth=ADMIN, headers=H).status_code == 400
+
+
+def test_kartenliste_abrufen_und_anzeigen(client, monkeypatch):
+    from app import karten
+    rid = next(r for r in client.get("/api/releases?spiele=magic").json() if r["name"] == "Star Trek")["id"]
+    abrufe = _kartenquelle(monkeypatch, rid)
+    assert client.put("/api/admin/karten/magic", json={"aktiv": True}, auth=ADMIN, headers=H).status_code == 200
+    meldung = karten._abrufen("magic")
+    assert "1 Sets mit 3 Karten" in meldung
+    assert sorted(abrufe) == ["https://cards.scryfall.io/n/10.jpg", "https://cards.scryfall.io/n/2.jpg"]
+
+    d = client.get(f"/api/karten/{rid}").json()
+    assert [k["nummer"] for k in d["karten"]] == ["2", "3", "10"]  # natürlich sortiert
+    assert d["karten"][1]["bild"] is None  # fremder Server wird nicht geladen
+    bild = client.get(d["karten"][0]["bild"])
+    assert bild.status_code == 200 and bild.headers["content-type"] == "image/webp"
+    from PIL import Image
+    import io
+    assert Image.open(io.BytesIO(bild.content)).width == karten.BILDBREITE
+    assert client.get(f"/api/releases/{rid}").json()["karten"] == 3
+    assert client.get("/karten/%d" % rid).status_code == 200
+
+    # Zweiter Lauf: vorhandene Bilder werden nicht erneut geladen
+    abrufe.clear()
+    karten._abrufen("magic")
+    assert abrufe == []
+
+    # Ausschalten blendet alles aus, die Daten bleiben erhalten
+    client.put("/api/admin/karten/magic", json={"aktiv": False}, auth=ADMIN, headers=H)
+    assert client.get(f"/api/karten/{rid}").status_code == 404
+    assert client.get(d["karten"][0]["bild"]).status_code == 404
+    assert "karten" not in client.get(f"/api/releases/{rid}").json()
+    client.put("/api/admin/karten/magic", json={"aktiv": True}, auth=ADMIN, headers=H)
+    assert len(client.get(f"/api/karten/{rid}").json()["karten"]) == 3
+
+    # Löschen entfernt Listen und Bilder
+    assert client.delete("/api/admin/karten/magic", auth=ADMIN, headers=H).status_code == 200
+    assert client.get(f"/api/karten/{rid}").status_code == 404
+    assert not os.path.exists(os.path.join(karten.verzeichnis(), "magic"))
+
+
+def test_kartenquellen_parser(monkeypatch):
+    from app import karten
+    produkte = [
+        {"name": "Booster Box", "imageUrl": "https://tcgplayer-cdn.tcgplayer.com/product/1_200w.jpg", "extendedData": []},
+        {"name": "Franky", "imageUrl": "https://tcgplayer-cdn.tcgplayer.com/product/2_200w.jpg",
+         "extendedData": [{"name": "Number", "value": "OP18-021"}, {"name": "Rarity", "value": "L"},
+                          {"name": "CardType", "value": "Leader"}]},
+    ]
+    k = karten._tcgcsv_karten(produkte)
+    assert k == [{"nummer": "OP18-021", "name": "Franky", "seltenheit": "L", "art": "Leader",
+                  "bild_url": "https://tcgplayer-cdn.tcgplayer.com/product/2_400w.jpg"}]
+
+    swu = {"data": [
+        {"Number": "001", "Name": "Luke", "Subtitle": "Jedi", "Rarity": "Rare", "Type": "Leader", "VariantType": "Normal",
+         "FrontArt": "https://cdn.swu-db.com/images/cards/X/001.png"},
+        {"Number": "001", "Name": "Luke", "Rarity": "Rare", "VariantType": "Foil", "FrontArt": "https://cdn.swu-db.com/a.png"},
+        {"Number": "270", "Name": "Luke", "Rarity": "Rare", "VariantType": "Hyperspace", "FrontArt": "https://cdn.swu-db.com/b.png"},
+    ]}
+    monkeypatch.setattr(karten, "_laden", lambda url: swu)
+    k = karten._swudb("X", None, {})
+    assert [(x["nummer"], x["name"], x["variante"]) for x in k] == [("001", "Luke – Jedi", None), ("270", "Luke", "Hyperspace")]
+
+    karten_json = [{"name": "Snatch", "pitch": "1", "type_text": "Generic Action - Attack", "printings": [
+        {"id": "WTR167", "set_id": "WTR", "foiling": "R", "edition": "A", "rarity": "C", "image_url": "https://x/rainbow.webp"},
+        {"id": "WTR167", "set_id": "WTR", "foiling": "S", "edition": "U", "rarity": "C", "image_url": "https://x/standard.webp"},
+    ]}]
+    monkeypatch.setattr(karten, "_laden", lambda url: karten_json)
+    k = karten._fabcube("WTR", None, {})
+    assert k == [{"nummer": "WTR167", "name": "Snatch (Rot)", "seltenheit": "Common", "art": "Generic Action - Attack",
+                  "bild_url": "https://x/standard.webp"}]
+
+    ygo = {"data": [{"name": "Dark Magician", "type": "Normal Monster", "card_images": [{"image_url": "https://images.ygoprodeck.com/images/cards/1.jpg"}],
+                     "card_sets": [{"set_name": "Legend of Blue Eyes", "set_code": "LOB-005", "set_rarity": "Ultra Rare"},
+                                   {"set_name": "Legend of Blue Eyes", "set_code": "LOB-005", "set_rarity": "Ultra Rare"},
+                                   {"set_name": "Anderes Set", "set_code": "AS-001", "set_rarity": "Common"}]}]}
+    monkeypatch.setattr(karten, "_laden", lambda url: ygo)
+    k = karten._ygoprodeck("LOB", "Legend of Blue Eyes", {})
+    assert [(x["nummer"], x["seltenheit"]) for x in k] == [("LOB-005", "Ultra Rare")]
+
+    with pytest.raises(ValueError):
+        karten._herunterladen("https://boese.example.com/x.jpg")
+
+
+def test_verknuepfen_legt_nichts_an(client):
+    from app import quellen
+    vorher = len(db.releases(von="1900-01-01"))
+    sets = [{"extern_id": "x:1", "spiel": "magic", "name": "Star Trek", "code": "TRK", "typ": "hauptset", "datum": "2026-11-20"},
+            {"extern_id": "x:2", "spiel": "magic", "name": "Gibt es nicht", "code": "GEN", "typ": "hauptset", "datum": "2001-01-01"}]
+    assert quellen.verknuepfen(sets) == 1
+    assert quellen.verknuepfen(sets) == 0
+    assert len(db.releases(von="1900-01-01")) == vorher

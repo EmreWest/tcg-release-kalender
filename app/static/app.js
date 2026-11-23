@@ -3,6 +3,7 @@
 
 const WT_KURZ = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
 const WT_LANG = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+const KARTEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="3" width="13" height="17" rx="2"/><path d="M4 7v12a2 2 0 0 0 2 2h9"/></svg>';
 const MON = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"];
 const STANDARD_STATUS = ["geruecht", "angekuendigt", "bestaetigt", "verschoben", "erschienen"];
 const ANSICHTEN = ["liste", "monat", "woche", "archiv", "aenderungen"];
@@ -318,6 +319,7 @@ function karte(e) {
   if (!e.pre && r.prerelease) meta.push(`<span>Prerelease ${fmt(r.prerelease)}</span>`);
   if (e.pre) meta.push(`<span>Release ${fmt(r.datum)}</span>`);
   if (r.vorheriges_datum && r.status === "verschoben") meta.push(`<span>vorher ${fmt(r.vorheriges_datum)}</span>`);
+  if (!e.pre && r.karten) meta.push(`<span class="karten-hinweis">${KARTEN_ICON}${r.karten.toLocaleString("de-DE")} Karten</span>`);
   const n = ca ? 99 : tageBis(e.tag);
   return `<button type="button" class="eintrag${r.status_effektiv === "erschienen" && !e.pre ? " vergangen" : ""}" style="--c:${farbe(r.spiel_farbe)}" data-r="${r.id}">
     ${datum}
@@ -514,7 +516,8 @@ async function archivRendern() {
     html += `<button type="button" class="archiv-zeile" style="--c:${farbe(r.spiel_farbe)}" data-r="${r.id}">
       <span class="archiv-datum">${datum}</span>
       <span class="archiv-spiel">${logo(r.spiel, "logo-mini")}${esc(r.spiel_name)}</span>
-      <span class="archiv-name">${esc(r.name)}${r.code ? ` <span class="code">${esc(r.code)}</span>` : ""}</span>
+      <span class="archiv-name">${esc(r.name)}${r.code ? ` <span class="code">${esc(r.code)}</span>` : ""}${r.karten
+        ? `<span class="archiv-karten" title="Kartenliste mit ${r.karten} Karten">${KARTEN_ICON}</span>` : ""}</span>
       <span class="archiv-typ">${esc(META.typen[r.typ] || r.typ)}</span>
     </button>`;
   }
@@ -624,6 +627,7 @@ async function detailZeigen(id) {
       <div class="detail-aktionen">
         <div class="links">
           <a class="knopf primaer" href="/release/${r.id}.ics" download>In meinen Kalender</a>
+          ${r.karten ? `<a class="knopf" href="/karten/${r.id}">${KARTEN_ICON} Kartenliste · ${r.karten.toLocaleString("de-DE")}</a>` : ""}
           <button type="button" class="knopf" data-teilen>Link kopieren</button>
         </div>
         <button type="button" class="knopf" data-schliessen>Schließen</button>
