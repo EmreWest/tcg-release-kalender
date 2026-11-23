@@ -16,7 +16,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import atom, checker, db, einstellungen, ics, karten, logos, notify, preise, quellen, rechtliches, setbilder
+from . import atom, checker, db, einstellungen, hersteller, ics, karten, logos, notify, preise, quellen, rechtliches, setbilder
 from . import produkte as produkte_modul
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -53,6 +53,7 @@ async def lifespan(_app: FastAPI):
         log.warning("ADMIN_PASSWORT ist kürzer als 16 Zeichen – für eine öffentlich erreichbare Seite zu schwach.")
     checker.starte_hintergrund()
     quellen.starte_hintergrund()
+    hersteller.starte_hintergrund()
     karten.starte_hintergrund()
     setbilder.starte_hintergrund()
     preise.starte_hintergrund()
@@ -362,6 +363,10 @@ def _mit_karten(rows: list[dict]) -> list[dict]:
     anzahl = karten.anzahlen()
     bilder = setbilder.zuordnung()
     produkte = produkte_modul.anzahlen(karten.freigeschaltet())
+    gefunden = hersteller.gefundene()
+    for r in rows:
+        if "spiel" in r:
+            r["offiziell_link"] = hersteller.link(r, gefunden)
     if anzahl or bilder or produkte:
         for r in rows:
             if anzahl.get(r["id"]):

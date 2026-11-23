@@ -620,9 +620,15 @@ async function detailZeigen(id) {
   if (r.prerelease) zeilen.push(["Prerelease", `${fmt(r.prerelease, true)} <span class="hinweis">(${countdown(r.prerelease)})</span>`]);
   if (r.vorheriges_datum && r.status === "verschoben") zeilen.push(["Vorher geplant", fmt(r.vorheriges_datum)]);
   if (ca) zeilen.push(["Genauigkeit", `Nur ${r.genauigkeit === "monat" ? "der Monat" : "das Quartal"} ist bekannt`]);
-  if (r.quelle) {
-    let host = r.quelle; try { host = new URL(r.quelle).hostname.replace(/^www\./, ""); } catch (e) {}
-    zeilen.push(["Quelle", `<a href="${esc(r.quelle)}" target="_blank" rel="noopener">${esc(host)}</a>`]);
+  const hostVon = (u) => { try { return new URL(u).hostname.replace(/^www\./, ""); } catch (e) { return u; } };
+  const o = r.offiziell_link;
+  if (o) {
+    zeilen.push([o.exakt ? "Offizielle Seite" : "Hersteller",
+      `<a href="${esc(o.url)}" target="_blank" rel="noopener">${o.exakt ? esc(hostVon(o.url)) : `Produkte bei ${esc(o.hersteller)}`}</a>`]);
+  }
+  // Die Datenquelle (TCGdex, TCGplayer, Fan-Seiten …) sieht nur die angemeldete Verwaltung
+  if (r.quelle && document.documentElement.classList.contains("angemeldet") && (!o || r.quelle !== o.url)) {
+    zeilen.push(["Quelle", `<a href="${esc(r.quelle)}" target="_blank" rel="noopener">${esc(hostVon(r.quelle))}</a>`]);
   }
   zeilen.push(["Zuletzt geändert", new Date(r.geaendert).toLocaleDateString("de-DE")]);
 

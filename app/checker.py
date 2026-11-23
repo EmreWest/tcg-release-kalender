@@ -47,7 +47,8 @@ Jedes Element:
     "genauigkeit": "tag" | "monat" | "quartal",
     "prerelease": "YYYY-MM-DD oder null",
     "status": "geruecht" | "angekuendigt" | "bestaetigt" | "verschoben" | "abgesagt",
-    "notiz": "kurze Notiz auf Deutsch oder null"
+    "notiz": "kurze Notiz auf Deutsch oder null",
+    "offiziell": "URL der offiziellen Produkt- bzw. Ankündigungsseite des Herstellers für genau dieses Produkt (keine Händler, keine Fan-Seiten), sonst null"
   }},
   "quelle": "URL der besten Quelle – wenn möglich die offizielle Seite des Herstellers",
   "begruendung": "ein Satz auf Deutsch, was neu ist bzw. was sich geändert hat"
@@ -55,6 +56,7 @@ Jedes Element:
 Regeln:
 - Bei "aenderung" enthält "daten" nur die Felder, die sich ändern.
 - "bestaetigt" nur bei offiziell genanntem Tagesdatum; "angekuendigt" bei offizieller Ankündigung ohne festes Datum oder nur aus Händlerlisten; "geruecht" bei Leaks/Markenanmeldungen.
+- Fehlt im Bestand "offiziell" und findest du die offizielle Herstellerseite des Produkts, schlage sie als "aenderung" mit nur diesem Feld vor.
 - Keine Vorschläge für Dinge, die im Bestand schon korrekt stehen. Keine Einzelpromos, Sleeves oder Zubehör; Booster-Sets, Spezialsets, wichtige Decks/Boxen ja.
 """
 
@@ -66,7 +68,7 @@ def aktiv() -> bool:
 def _bestand(spiel_id: str) -> str:
     von = (date.today() - timedelta(days=30)).isoformat()
     rows = db.releases(spiele_filter=[spiel_id], von=von)
-    kurz = [{k: r[k] for k in ("id", "name", "code", "typ", "datum", "genauigkeit", "prerelease", "status")}
+    kurz = [{k: r.get(k) for k in ("id", "name", "code", "typ", "datum", "genauigkeit", "prerelease", "status", "offiziell")}
             for r in rows]
     return json.dumps(kurz, ensure_ascii=False, indent=1)
 
@@ -102,6 +104,15 @@ def vorschlaege_einspielen(liste: list, herkunft: str) -> tuple[int, list[str]]:
             aktion = v["aktion"]
             daten = v["daten"]
             rid = v.get("release_id")
+            if daten.get("offiziell"):
+                # Nur Seiten des Herstellers dieses Spiels übernehmen
+                from . import hersteller
+                spiel = daten.get("spiel") or ((db.release(int(rid)) or {}).get("spiel") if rid else None)
+                h = hersteller.HERSTELLER.get(spiel)
+                if not h or not hersteller._auf_domain(daten["offiziell"], h[2]):
+                    daten.pop("offiziell")
+                    if aktion == "aenderung" and not daten:
+                        raise ValueError("Keine offizielle Herstellerseite")
             if aktion == "neu":
                 if daten.get("spiel") not in spiel_ids:
                     raise ValueError(f"Unbekanntes Spiel: {daten.get('spiel')}")

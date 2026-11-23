@@ -1027,3 +1027,47 @@ def test_eigene_set_logos(client, monkeypatch):
     client.delete(f"/api/admin/releases/{rid}", auth=ADMIN, headers=H)
     setbilder._aufraeumen()
     assert client.get(d["symbol"]["eigenes"]).status_code == 404
+
+
+def test_offizielle_herstellerseiten(client, monkeypatch):
+    from app import checker, hersteller
+    seite = """
+      <a href="/de/pokemon-sammelkartenspiel/mega-entwicklung-delta-herrschaft">Delta-Herrschaft</a>
+      <a href="/de/pokemon-sammelkartenspiel/30-jahre">30 Jahre</a>
+      <a href="/de/pokemon-sammelkartenspiel/pokemon-karten/series/me06/103">Karte</a>
+      <a href="https://boese.example/de/pokemon-sammelkartenspiel/delta">Fremd</a>"""
+    kand = hersteller.kandidaten(seite, "https://www.pokemon.com/de/pokemon-sammelkartenspiel", ("pokemon.com",),
+                                 hersteller.HERSTELLER["pokemon"][4])
+    assert set(kand) == {"https://www.pokemon.com/de/pokemon-sammelkartenspiel/mega-entwicklung-delta-herrschaft",
+                         "https://www.pokemon.com/de/pokemon-sammelkartenspiel/30-jahre"}
+    rels = [{"id": 1, "name": "Delta Reign", "name_de": "Delta-Herrschaft"}, {"id": 2, "name": "30th Celebration", "name_de": "30 Jahre"},
+            {"id": 3, "name": "30th Celebration Premium (Welle 4)"}, {"id": 4, "name": "Unbekannt"}]
+    z = hersteller.zuordnen(rels, kand)
+    assert z == {1: "https://www.pokemon.com/de/pokemon-sammelkartenspiel/mega-entwicklung-delta-herrschaft",
+                 2: "https://www.pokemon.com/de/pokemon-sammelkartenspiel/30-jahre"}
+    # Linktext mit vielen weiteren Wörtern (Vanguard) und gleich gut passende Termine bleiben offen
+    kand = hersteller.kandidaten('<a href="/products/dzbt16/">BOOSTER PACK Cardfight Vanguard Booster Pack 16: Parallactic Dawn October 30</a>'
+                                 '<a href="/products/x1/">Starter Deck</a>', "https://en.cf-vanguard.com/products/", ("cf-vanguard.com",), r"/products/")
+    z = hersteller.zuordnen([{"id": 5, "name": "Parallactic Dawn"}, {"id": 6, "name": "Starter Deck"}, {"id": 7, "name": "Starter Deck"}], kand)
+    assert z == {5: "https://en.cf-vanguard.com/products/dzbt16/"}
+
+    # Reihenfolge: eigener Eintrag > gefunden > Quelle auf Herstellerseite > Produktübersicht
+    rid = db.anlegen({"spiel": "pokemon", "name": "Delta Reign", "datum": "2026-11-26", "quelle": "https://tcgdex.dev/"})
+    link = lambda: client.get(f"/api/releases/{rid}").json()["offiziell_link"]  # noqa: E731
+    assert link() == {"url": "https://www.pokemon.com/de/pokemon-sammelkartenspiel", "exakt": False, "hersteller": "pokemon.com"}
+    with db.verbindung() as con:
+        con.execute("INSERT INTO hersteller_links (release_id, url, gefunden) VALUES (?, ?, 'x')",
+                    (rid, "https://www.pokemon.com/de/pokemon-sammelkartenspiel/mega-entwicklung-delta-herrschaft"))
+    assert link()["url"].endswith("mega-entwicklung-delta-herrschaft") and link()["exakt"]
+    client.put(f"/api/admin/releases/{rid}", json={"offiziell": "https://www.pokemon.com/de/eigene-seite"}, auth=ADMIN, headers=H)
+    assert link()["url"] == "https://www.pokemon.com/de/eigene-seite"
+    assert client.put(f"/api/admin/releases/{rid}", json={"offiziell": "javascript:alert(1)"}, auth=ADMIN, headers=H).status_code == 400
+    ics = client.get("/kalender.ics?spiele=pokemon").text.replace("\r\n ", "")
+    assert "Offizielle Seite: https://www.pokemon.com/de/eigene-seite" in ics and "tcgdex.dev" not in ics
+
+    # Claude-Vorschläge: nur Seiten auf der Domain des Herstellers
+    angelegt, fehler = checker.vorschlaege_einspielen([
+        {"aktion": "aenderung", "release_id": rid, "daten": {"offiziell": "https://haendler.example/delta"}},
+        {"aktion": "aenderung", "release_id": rid, "daten": {"offiziell": "https://www.pokemon.com/de/pokemon-sammelkartenspiel/x"}},
+    ], "claude-test")
+    assert angelegt == 1 and len(fehler) == 1

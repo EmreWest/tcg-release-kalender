@@ -222,7 +222,8 @@
       <label>Prerelease<input name="prerelease" type="date"></label>
       <label>Status<select name="status"></select></label>
       <label class="breit">Notiz<textarea name="notiz"></textarea></label>
-      <label class="breit">Quelle (URL)<input name="quelle" type="url" placeholder="https://"></label>
+      <label class="breit">Quelle (URL, nur für dich sichtbar)<input name="quelle" type="url" placeholder="https://"></label>
+      <label class="breit">Offizielle Seite des Herstellers (URL, für Besucher; leer = automatisch gefunden bzw. Produktübersicht)<input name="offiziell" type="url" placeholder="https://"></label>
     </div>
     <p class="hinweis">Bei Monat oder Quartal den ersten Tag des Zeitraums als Datum wählen. Ändert sich das Datum eines bestätigten Termins, wird er automatisch als „Verschoben“ markiert – außer du setzt den Status selbst.</p>
     <div id="dlg-setbilder" class="setbild-bereich" hidden>
@@ -240,7 +241,7 @@
 
 <script>
 let META, TERMINE = [], SPIELE = [], dlgAktion = null;
-const FELDER = ["spiel","name","name_de","code","typ","datum","genauigkeit","prerelease","status","notiz","quelle"];
+const FELDER = ["spiel","name","name_de","code","typ","datum","genauigkeit","prerelease","status","notiz","quelle","offiziell"];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = iso => iso ? new Date(iso + "T12:00:00").toLocaleDateString("de-DE") : "–";
 const heuteIso = () => new Date().toISOString().slice(0, 10);

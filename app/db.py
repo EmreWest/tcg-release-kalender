@@ -33,7 +33,7 @@ TYPEN = {
 GENAUIGKEIT = {"tag": "Tag", "monat": "Monat", "quartal": "Quartal"}
 
 FELDER = ["spiel", "name", "name_de", "code", "typ", "datum", "genauigkeit", "prerelease",
-          "status", "notiz", "quelle"]
+          "status", "notiz", "quelle", "offiziell"]
 
 # Felder, deren Änderung im Änderungsprotokoll und in Benachrichtigungen erscheint
 RELEVANTE_FELDER = ["name", "code", "typ", "datum", "genauigkeit", "prerelease", "status"]
@@ -141,6 +141,11 @@ CREATE TABLE IF NOT EXISTS setbilder (
     logo_datei TEXT,
     geprueft TEXT
 );
+CREATE TABLE IF NOT EXISTS hersteller_links (
+    release_id INTEGER PRIMARY KEY,
+    url TEXT NOT NULL,
+    gefunden TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS setbilder_manuell (
     release_id INTEGER PRIMARY KEY,
     symbol_datei TEXT,
@@ -219,6 +224,8 @@ def init():
         if "logo" not in spalten:
             con.execute("ALTER TABLE spiele ADD COLUMN logo TEXT")
         # Migration: deutscher Set-Name zusätzlich zum englischen
+        if "offiziell" not in {r["name"] for r in con.execute("PRAGMA table_info(releases)")}:
+            con.execute("ALTER TABLE releases ADD COLUMN offiziell TEXT")
         if "name_de" not in {r["name"] for r in con.execute("PRAGMA table_info(releases)")}:
             con.execute("ALTER TABLE releases ADD COLUMN name_de TEXT")
             # Deutsche Pokémon-Namen standen bisher nur in der Notiz („Deutsche Ausgabe: „…““)
@@ -313,10 +320,10 @@ def effektiver_status(r: dict) -> str:
 
 def _bereinigen(daten: dict) -> dict:
     d = {k: daten.get(k) for k in FELDER if k in daten}
-    for k in ("name_de", "code", "prerelease", "notiz", "quelle"):
+    for k in ("name_de", "code", "prerelease", "notiz", "quelle", "offiziell"):
         if k in d and (d[k] is None or str(d[k]).strip() == ""):
             d[k] = None
-    for k in ("name", "name_de", "code", "notiz", "quelle"):
+    for k in ("name", "name_de", "code", "notiz", "quelle", "offiziell"):
         if isinstance(d.get(k), str):
             d[k] = d[k].strip()
     if "status" in d and d["status"] not in STATUS:
@@ -330,6 +337,8 @@ def _bereinigen(daten: dict) -> dict:
             date.fromisoformat(d[k])
     if d.get("quelle") and not d["quelle"].startswith(("http://", "https://")):
         raise ValueError("Quelle muss mit http:// oder https:// beginnen")
+    if d.get("offiziell") and (not d["offiziell"].startswith("https://") or len(d["offiziell"]) > 500):
+        raise ValueError("Die offizielle Seite muss mit https:// beginnen")
     return d
 
 

@@ -1,7 +1,7 @@
 """Erzeugt iCalendar-Feeds (RFC 5545) ohne externe Abhängigkeiten."""
 from datetime import date, timedelta
 
-from . import db
+from . import db, hersteller
 
 MONATE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August",
           "September", "Oktober", "November", "Dezember"]
@@ -82,6 +82,7 @@ def feed(rows: list[dict], titel: str, host: str, mit_prerelease: bool, basis_ur
         "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
         "X-PUBLISHED-TTL:PT6H",
     ]
+    gefunden = hersteller.gefundene()
     for r in rows:
         status_txt = db.STATUS_FILTER[r["status_effektiv"]]
         name = (r.get("name_de") or r["name"]) + (f" ({r['code']})" if r.get("code") else "")
@@ -111,17 +112,19 @@ def feed(rows: list[dict], titel: str, host: str, mit_prerelease: bool, basis_ur
         if r.get("notiz"):
             teile.append("")
             teile.append(r["notiz"])
-        if r.get("quelle"):
+        offiziell = hersteller.link(r, gefunden)
+        if offiziell:
             teile.append("")
-            teile.append(f"Quelle: {r['quelle']}")
+            teile.append(f"{'Offizielle Seite' if offiziell['exakt'] else 'Produkte beim Hersteller'}: {offiziell['url']}")
         if basis_url:
             teile.append(f"Details: {basis_url}/?r={r['id']}")
         beschreibung = "\n".join(teile)
 
-        zeilen += _event(f"tcg-{r['id']}", r["datum"], summary, beschreibung, r.get("quelle"), r, host)
+        url = offiziell["url"] if offiziell else None
+        zeilen += _event(f"tcg-{r['id']}", r["datum"], summary, beschreibung, url, r, host)
         if mit_prerelease and r.get("prerelease"):
             zeilen += _event(f"tcg-pre-{r['id']}", r["prerelease"],
                              f"[{r['spiel_name']}] Prerelease: {name}", beschreibung,
-                             r.get("quelle"), r, host)
+                             url, r, host)
     zeilen.append("END:VCALENDAR")
     return "\r\n".join(_falten(z) for z in zeilen) + "\r\n"
