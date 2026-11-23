@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anmelden – {{TITEL}}</title>
+<link rel="icon" type="{{FAVICON_TYP}}" href="{{FAVICON}}">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/theme.js"></script>
+</head>
+<body class="login-seite">
+<main class="login-wrap">
+  <form class="flaeche login-box" id="login" novalidate>
+    <div class="login-kopf">
+      {{KOPF_LOGO}}
+      <h1>Verwaltung</h1>
+      <p class="unter">{{TITEL}}</p>
+    </div>
+    {{LOGIN_HINWEIS}}
+    <label>Benutzername<input name="benutzer" autocomplete="username" autocapitalize="none" spellcheck="false" required></label>
+    <label>Passwort
+      <span class="passwort-feld">
+        <input name="passwort" type="password" autocomplete="current-password" required>
+        <button type="button" class="icon-knopf" id="zeigen" aria-label="Passwort anzeigen" title="Passwort anzeigen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+      </span>
+    </label>
+    <label class="schalter"><input type="checkbox" name="merken"> Angemeldet bleiben (30 Tage)</label>
+    <p class="login-fehler" id="fehler" role="alert" hidden></p>
+    <button class="knopf primaer" type="submit" id="los">Anmelden</button>
+    <a class="login-zurueck" href="/">Zur öffentlichen Ansicht</a>
+  </form>
+</main>
+<script>
+(function () {
+  const f = document.getElementById("login"), fehler = document.getElementById("fehler"), los = document.getElementById("los");
+  f.elements.benutzer.focus();
+  document.getElementById("zeigen").onclick = () => {
+    const p = f.elements.passwort; p.type = p.type === "password" ? "text" : "password"; p.focus();
+  };
+  f.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    fehler.hidden = true;
+    if (!f.elements.benutzer.value || !f.elements.passwort.value) {
+      fehler.textContent = "Bitte Benutzername und Passwort eingeben."; fehler.hidden = false; return;
+    }
+    los.disabled = true; los.textContent = "Anmelden …";
+    try {
+      const r = await fetch("/api/login", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Admin-Anfrage": "1" },
+        body: JSON.stringify({ benutzer: f.elements.benutzer.value, passwort: f.elements.passwort.value, merken: f.elements.merken.checked }),
+      });
+      if (r.ok) { location.replace("/admin"); return; }
+      const j = await r.json().catch(() => ({}));
+      fehler.textContent = j.detail || "Anmeldung fehlgeschlagen.";
+    } catch (err) {
+      fehler.textContent = "Der Server ist nicht erreichbar.";
+    }
+    fehler.hidden = false; los.disabled = false; los.textContent = "Anmelden";
+    f.elements.passwort.select();
+  });
+})();
+</script>
+</body>
+</html>

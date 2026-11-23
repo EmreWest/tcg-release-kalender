@@ -28,7 +28,7 @@ VORLAGE_DATENSCHUTZ = """## Verantwortlicher
 E-Mail: [E-Mail-Adresse]
 
 ## Überblick
-Diese Seite zeigt Erscheinungstermine von Sammelkartenspielen. Sie verwendet keine Cookies, keine Analyse- oder Tracking-Werkzeuge und lädt keine Inhalte von fremden Servern (keine externen Schriften, Skripte oder Karten). Es gibt keine Benutzerkonten, Formulare oder Newsletter.
+Diese Seite zeigt Erscheinungstermine von Sammelkartenspielen. Besucher erhalten keine Cookies (nur der Verwaltungszugang des Betreibers nutzt nach der Anmeldung ein technisch notwendiges Sitzungs-Cookie). Es gibt keine Analyse- oder Tracking-Werkzeuge, und die Seite lädt keine Inhalte von fremden Servern (keine externen Schriften, Skripte oder Karten). Für Besucher gibt es keine Benutzerkonten, Formulare oder Newsletter.
 
 ## Server-Protokolle
 Beim Aufruf der Seite oder des Kalender-Abos verarbeitet der Server technisch notwendige Daten: IP-Adresse, Datum und Uhrzeit, aufgerufene Adresse, übertragene Datenmenge sowie Browser- bzw. Kalender-App-Kennung. Diese Daten werden ausschließlich zum Betrieb und zur Absicherung der Seite verwendet und nach [Anzahl] Tagen gelöscht.

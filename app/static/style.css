@@ -641,3 +641,19 @@ dialog.karte-dlg { width: min(860px, calc(100vw - 24px)); }
 }
 .zurueck-zeile { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: -6px 0 14px; }
 .zurueck-zeile .zurueck-link { margin: 0; }
+
+/* Anmeldung */
+.login-wrap { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+.login-box { width: min(380px, 100%); padding: 26px 24px 22px; display: flex; flex-direction: column; gap: 14px; }
+.login-kopf { text-align: center; margin-bottom: 4px; }
+.login-kopf .seiten-logo { display: block; margin: 0 auto 12px; height: 52px; }
+.login-kopf h1 { margin: 0; font-size: 22px; letter-spacing: -.01em; }
+.login-kopf .unter { margin: 2px 0 0; color: var(--text2); font-size: 14px; }
+.login-box > label:not(.schalter) { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--text2); font-weight: 550; }
+.login-box .schalter { margin: 0; }
+.passwort-feld { position: relative; display: block; }
+.passwort-feld input { padding-right: 44px; }
+.passwort-feld .icon-knopf { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); height: 30px; min-width: 30px; border: 0; background: none; }
+.login-box .knopf.primaer { padding: 10px 14px; font-size: 15px; justify-content: center; }
+.login-fehler { margin: 0; padding: 9px 12px; border-radius: 8px; font-size: 14px; color: var(--rot); background: color-mix(in srgb, var(--rot) 10%, transparent); }
+.login-zurueck { text-align: center; font-size: 13px; color: var(--text2); }

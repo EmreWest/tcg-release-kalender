@@ -45,7 +45,7 @@ docker compose up -d
 Danach:
 
 - Kalender: `http://<server>:8085/`
-- Verwaltung: `http://<server>:8085/admin` (Benutzer und Passwort aus der `.env`)
+- Verwaltung: `http://<server>:8085/admin` – leitet zur Anmeldeseite `/login` (Benutzer und Passwort aus der `.env`)
 
 ### docker-compose.yml
 
@@ -171,7 +171,9 @@ kalender.example.org {
 }
 ```
 
-Die Verwaltung ist per Passwort geschützt (HTTP Basic Auth). Öffentlich nur über HTTPS betreiben. Wer mag, beschränkt `/admin` und `/api/admin/*` im Reverse Proxy zusätzlich auf das eigene Netz.
+Die Verwaltung ist per Anmeldeseite geschützt (`/login`). Nach der Anmeldung gilt ein Sitzungs-Cookie (HttpOnly, SameSite=Strict, über HTTPS mit Secure) 12 Stunden, mit „Angemeldet bleiben“ 30 Tage. Sitzungen überstehen Neustarts und werden ungültig, sobald `ADMIN_PASSWORT` geändert wird. Nach 5 Fehlversuchen ist die Anmeldung von dieser IP-Adresse für 15 Minuten gesperrt; damit die echte Adresse ankommt, muss der Reverse Proxy `X-Forwarded-For` setzen (bei HAProxy die Option „forwardfor“). Für Skripte funktionieren Benutzer und Passwort per HTTP Basic Auth weiterhin.
+
+Öffentlich nur über HTTPS betreiben. Wer mag, beschränkt `/login`, `/admin` und `/api/admin/*` im Reverse Proxy zusätzlich auf das eigene Netz.
 
 ## Kalender abonnieren
 
@@ -429,7 +431,7 @@ Alle öffentlichen Endpunkte liefern JSON bzw. Kalender- oder Feed-Dateien und b
 | `GET /impressum`, `GET /datenschutz` | Rechtstexte aus der Verwaltung |
 | `GET /healthz` | Zustandsprüfung |
 
-Schreibende Verwaltungs-Endpunkte unter `/api/admin/` erwarten Benutzer und Passwort sowie den Header `X-Admin-Anfrage: 1` (Schutz gegen Anfragen fremder Webseiten).
+Verwaltungs-Endpunkte unter `/api/admin/` erwarten eine Sitzung (`POST /api/login`) oder Benutzer und Passwort per Basic Auth; schreibende Anfragen zusätzlich den Header `X-Admin-Anfrage: 1` (Schutz gegen Anfragen fremder Webseiten).
 
 ## Datensicherung
 

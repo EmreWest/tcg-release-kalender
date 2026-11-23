@@ -59,9 +59,13 @@ def test_einzelner_termin_ics(client):
 
 
 def test_admin_braucht_login_und_header(client):
-    assert client.get("/admin").status_code == 401
-    assert client.get("/admin", auth=("admin", "falsch")).status_code == 401
+    # Ohne Anmeldung geht es zur Anmeldeseite, kein Browser-Fenster für Basic Auth
+    r = client.get("/admin", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login"
+    assert client.get("/admin", auth=("admin", "falsch"), follow_redirects=False).status_code == 303
     assert client.get("/admin", auth=ADMIN).status_code == 200
+    r = client.get("/api/admin/status")
+    assert r.status_code == 401 and "www-authenticate" not in r.headers
     # Schreibende Anfragen ohne Schutz-Header werden abgelehnt
     assert client.delete("/api/admin/releases/1", auth=ADMIN).status_code == 403
 
@@ -633,3 +637,45 @@ def test_kartenlisten_uebersicht(client, monkeypatch):
     assert d["sets"][0]["id"] == rid and d["sets"][0]["karten"] == 3
     assert client.get("/karten").status_code == 200
     assert 'href="/karten"' in client.get("/").text
+
+
+def test_anmeldeseite_und_sitzung(client):
+    from app import main as m
+    assert 'id="login"' in client.get("/login").text
+    # Ohne Header X-Admin-Anfrage keine Anmeldung (Schutz vor fremden Seiten)
+    assert client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1]}).status_code == 403
+    assert client.post("/api/login", json={"benutzer": "admin", "passwort": "falsch"}, headers=H).status_code == 401
+    r = client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1]}, headers=H)
+    assert r.status_code == 200
+    cookie = r.headers["set-cookie"]
+    assert "HttpOnly" in cookie and "SameSite=strict" in cookie and "Max-Age" not in cookie
+    assert client.get("/api/admin/status").status_code == 200
+    assert client.get("/admin").status_code == 200
+    assert client.get("/login", follow_redirects=False).status_code == 303
+    # Manipulierter Cookie zählt nicht
+    client.cookies.set(m.SITZUNG_COOKIE, "9999999999.abc")
+    assert client.get("/api/admin/status").status_code == 401
+    # Merken setzt eine Laufzeit, Abmelden löscht den Cookie
+    r = client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1], "merken": True}, headers=H)
+    assert "Max-Age=2592000" in r.headers["set-cookie"]
+    client.cookies.set(m.SITZUNG_COOKIE, r.cookies.get(m.SITZUNG_COOKIE))
+    assert client.get("/api/admin/status").status_code == 200
+    client.post("/api/logout", headers=H)
+    client.cookies.clear()
+    assert client.get("/api/admin/status").status_code == 401
+    # Passwortwechsel macht bestehende Sitzungen ungültig
+    token = m._token(int(m.time.time()) + 3600)
+    m.ADMIN_PASSWORT = "neu"
+    try:
+        assert not m._sitzung_gueltig(token)
+    finally:
+        m.ADMIN_PASSWORT = ADMIN[1]
+
+
+def test_anmeldung_sperre_nach_fehlversuchen(client, monkeypatch):
+    from app import main as m
+    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    monkeypatch.setattr(m, "_FEHLVERSUCHE", {})
+    for _ in range(m.FEHLVERSUCHE_MAX):
+        assert client.post("/api/login", json={"benutzer": "admin", "passwort": "x"}, headers=H).status_code == 401
+    assert client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1]}, headers=H).status_code == 429

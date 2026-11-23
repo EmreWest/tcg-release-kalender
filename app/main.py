@@ -1,15 +1,17 @@
+import hashlib
+import hmac
+import html
 import logging
 import os
-import secrets
-import hashlib
-import html
 import re
+import secrets
 import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -63,7 +65,9 @@ security = HTTPBasic(auto_error=False)
 async def schutz(request: Request, call_next):
     # Schutz vor Cross-Site-Requests auf schreibende Admin-Endpunkte: Ein eigener Header
     # lässt sich von fremden Seiten nicht ohne CORS-Freigabe setzen.
-    if request.url.path.startswith("/api/admin/") and request.method not in ("GET", "HEAD", "OPTIONS"):
+    pfad = request.url.path
+    if (pfad.startswith("/api/admin/") or pfad in ("/api/login", "/api/logout")) \
+            and request.method not in ("GET", "HEAD", "OPTIONS"):
         if request.headers.get("x-admin-anfrage") != "1":
             return JSONResponse({"detail": "Header X-Admin-Anfrage fehlt"}, status_code=403)
     antwort = await call_next(request)
@@ -77,13 +81,64 @@ async def schutz(request: Request, call_next):
     return antwort
 
 
-def admin(cred: HTTPBasicCredentials | None = Depends(security)):
-    ok = cred is not None and bool(ADMIN_PASSWORT) \
-        and secrets.compare_digest(cred.username.encode(), ADMIN_USER.encode()) \
-        and secrets.compare_digest(cred.password.encode(), ADMIN_PASSWORT.encode())
-    if not ok:
-        raise HTTPException(401, "Nicht angemeldet", headers={"WWW-Authenticate": 'Basic realm="Admin"'})
-    return cred.username
+# --- Anmeldung ---------------------------------------------------------------------
+# Die Verwaltung nutzt eine Anmeldeseite mit Sitzungs-Cookie. Benutzer und Passwort per
+# HTTP Basic Auth funktionieren für Skripte weiterhin, lösen aber kein Browser-Fenster mehr aus.
+
+SITZUNG_COOKIE = "tcg_sitzung"
+SITZUNG_STUNDEN = 12
+SITZUNG_MERKEN_TAGE = 30
+_FEHLVERSUCHE: dict[str, list[float]] = {}
+FEHLVERSUCHE_MAX, SPERRE_SEKUNDEN = 5, 15 * 60
+
+
+def _zugang_ok(benutzer: str, passwort: str) -> bool:
+    return bool(ADMIN_PASSWORT) \
+        and secrets.compare_digest(benutzer.encode(), ADMIN_USER.encode()) \
+        and secrets.compare_digest(passwort.encode(), ADMIN_PASSWORT.encode())
+
+
+def _sitzungs_schluessel() -> bytes:
+    # Zufälliger Schlüssel in der Datenbank plus Passwort: Sitzungen überleben Neustarts,
+    # werden aber ungültig, sobald das Passwort geändert wird.
+    basis = db.meta_get("sitzungs_schluessel")
+    if not basis:
+        basis = secrets.token_hex(32)
+        db.meta_set("sitzungs_schluessel", basis)
+    return hashlib.sha256(f"{basis}|{ADMIN_USER}|{ADMIN_PASSWORT}".encode()).digest()
+
+
+def _token(ablauf: int) -> str:
+    sig = hmac.new(_sitzungs_schluessel(), str(ablauf).encode(), hashlib.sha256).hexdigest()
+    return f"{ablauf}.{sig}"
+
+
+def _sitzung_gueltig(wert: str | None) -> bool:
+    if not wert or not ADMIN_PASSWORT or "." not in wert:
+        return False
+    ablauf, _, sig = wert.partition(".")
+    if not ablauf.isdigit() or int(ablauf) < time.time():
+        return False
+    return hmac.compare_digest(_token(int(ablauf)), wert)
+
+
+def _angemeldet(request: Request, cred: HTTPBasicCredentials | None) -> bool:
+    if _sitzung_gueltig(request.cookies.get(SITZUNG_COOKIE)):
+        return True
+    return cred is not None and _zugang_ok(cred.username, cred.password)
+
+
+def admin(request: Request, cred: HTTPBasicCredentials | None = Depends(security)):
+    if not _angemeldet(request, cred):
+        raise HTTPException(401, "Nicht angemeldet")
+    return ADMIN_USER
+
+
+def _gesperrt(ip: str) -> bool:
+    jetzt = time.time()
+    versuche = [t for t in _FEHLVERSUCHE.get(ip, []) if jetzt - t < SPERRE_SEKUNDEN]
+    _FEHLVERSUCHE[ip] = versuche
+    return len(versuche) >= FEHLVERSUCHE_MAX
 
 
 def basis(request: Request) -> str:
@@ -388,8 +443,44 @@ def healthz():
 # --- Admin ------------------------------------------------------------------------
 
 @app.get("/admin", include_in_schema=False)
-def admin_seite(_=Depends(admin)):
+def admin_seite(request: Request, cred: HTTPBasicCredentials | None = Depends(security)):
+    if not _angemeldet(request, cred):
+        return RedirectResponse("/login", status_code=303)
     return _seite("admin.html")
+
+
+@app.get("/login", include_in_schema=False)
+def login_seite(request: Request):
+    if _sitzung_gueltig(request.cookies.get(SITZUNG_COOKIE)):
+        return RedirectResponse("/admin", status_code=303)
+    hinweis = "" if ADMIN_PASSWORT else (
+        '<p class="login-fehler">Der Verwaltungsbereich ist gesperrt, weil <code>ADMIN_PASSWORT</code> nicht gesetzt ist.</p>')
+    return _seite("login.html", {"{{LOGIN_HINWEIS}}": hinweis})
+
+
+@app.post("/api/login", include_in_schema=False)
+def login(request: Request, daten: dict = Body(...)):
+    ip = request.client.host if request.client else "?"
+    if _gesperrt(ip):
+        raise HTTPException(429, "Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.")
+    if not _zugang_ok(str(daten.get("benutzer") or ""), str(daten.get("passwort") or "")):
+        _FEHLVERSUCHE.setdefault(ip, []).append(time.time())
+        log.warning("Fehlgeschlagene Anmeldung von %s", ip)
+        time.sleep(1)  # bremst das Durchprobieren von Passwörtern
+        raise HTTPException(401, "Benutzername oder Passwort falsch")
+    _FEHLVERSUCHE.pop(ip, None)
+    dauer = SITZUNG_MERKEN_TAGE * 86400 if daten.get("merken") else SITZUNG_STUNDEN * 3600
+    antwort = JSONResponse({"ok": True})
+    antwort.set_cookie(SITZUNG_COOKIE, _token(int(time.time()) + dauer), max_age=dauer if daten.get("merken") else None,
+                       httponly=True, samesite="strict", secure=request.url.scheme == "https", path="/")
+    return antwort
+
+
+@app.post("/api/logout", include_in_schema=False)
+def logout():
+    antwort = JSONResponse({"ok": True})
+    antwort.delete_cookie(SITZUNG_COOKIE, path="/")
+    return antwort
 
 
 @app.get("/api/admin/einstellungen")

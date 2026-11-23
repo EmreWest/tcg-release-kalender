@@ -13,7 +13,12 @@
 <div class="wrap">
   <header class="kopf">
     <div><h1>Verwaltung</h1><p class="unter"><a href="/">Zur öffentlichen Ansicht</a></p></div>
-    <div class="kopf-rechts"><button class="icon-knopf" id="design-knopf" type="button"></button></div>
+    <div class="kopf-rechts">
+      <button class="icon-knopf" id="abmelden" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        Abmelden</button>
+      <button class="icon-knopf" id="design-knopf" type="button"></button>
+    </div>
   </header>
 
   <nav class="tabs" role="tablist">
@@ -230,10 +235,16 @@ function toast(t) { const el = document.getElementById("toast"); el.textContent 
 
 async function api(pfad, opt = {}) {
   const r = await fetch(pfad, { ...opt, headers: { "Content-Type": "application/json", "X-Admin-Anfrage": "1", ...(opt.headers || {}) } });
+  if (r.status === 401) { location.replace("/login"); throw new Error("Abgemeldet"); }
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.detail || r.statusText);
   return j;
 }
+
+document.getElementById("abmelden").onclick = async () => {
+  await fetch("/api/logout", { method: "POST", headers: { "X-Admin-Anfrage": "1" } }).catch(() => {});
+  location.replace("/login");
+};
 
 document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
   document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b));
