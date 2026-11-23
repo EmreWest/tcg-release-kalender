@@ -18,6 +18,8 @@ from . import db
 log = logging.getLogger("tcg-kalender.hersteller")
 
 INTERVALL_STUNDEN = 24
+# Bei Änderungen an der Suche erhöhen: Dann läuft der Abgleich nach dem Update sofort statt erst nach 24 Stunden
+SUCHE_VERSION = "2"
 ZEITRAUM_TAGE = 180  # nur für kommende und kürzlich erschienene Sets suchen
 _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 
@@ -216,6 +218,7 @@ def abgleichen() -> str:
             gesamt = con.execute("SELECT COUNT(*) FROM hersteller_links").fetchone()[0]
         msg = f"{gesamt} Produktseiten zugeordnet ({gefunden} in diesem Lauf)" + (f", {fehler} Seiten nicht abrufbar" if fehler else "")
         db.meta_set("hersteller_stand", datetime.now(timezone.utc).isoformat())
+        db.meta_set("hersteller_version", SUCHE_VERSION)
         status["meldung"] = msg
         log.info("Herstellerseiten: %s", msg)
         return msg
@@ -251,7 +254,8 @@ def starte_hintergrund():
         while True:
             try:
                 letzte = db.meta_get("hersteller_stand")
-                if not letzte or datetime.now(timezone.utc) - datetime.fromisoformat(letzte) >= timedelta(hours=INTERVALL_STUNDEN):
+                if not letzte or db.meta_get("hersteller_version") != SUCHE_VERSION \
+                        or datetime.now(timezone.utc) - datetime.fromisoformat(letzte) >= timedelta(hours=INTERVALL_STUNDEN):
                     abgleichen()
             except Exception:  # noqa: BLE001
                 log.exception("Abgleich der Herstellerseiten fehlgeschlagen")
