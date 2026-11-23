@@ -653,12 +653,15 @@ def test_anmeldeseite_und_sitzung(client):
     assert client.get("/admin").status_code == 200
     assert client.get("/login", follow_redirects=False).status_code == 303
     # Manipulierter Cookie zählt nicht
+    client.cookies.clear()
     client.cookies.set(m.SITZUNG_COOKIE, "9999999999.abc")
     assert client.get("/api/admin/status").status_code == 401
     # Merken setzt eine Laufzeit, Abmelden löscht den Cookie
     r = client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1], "merken": True}, headers=H)
     assert "Max-Age=2592000" in r.headers["set-cookie"]
-    client.cookies.set(m.SITZUNG_COOKIE, r.cookies.get(m.SITZUNG_COOKIE))
+    token = r.cookies.get(m.SITZUNG_COOKIE)
+    client.cookies.clear()
+    client.cookies.set(m.SITZUNG_COOKIE, token)
     assert client.get("/api/admin/status").status_code == 200
     client.post("/api/logout", headers=H)
     client.cookies.clear()
