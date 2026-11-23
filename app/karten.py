@@ -268,28 +268,33 @@ def _tcgdex(set_id: str, set_name: str | None, kontext: dict) -> list[dict]:
     s = _laden(f"https://api.tcgdex.net/v2/de/sets/{quote(set_id)}")
     alt = kontext.get("bisher") or {}
     # Für ältere Sets hat TCGdex oft keine deutschen Scans – dann das englische Kartenbild nehmen
-    ersatz = {}
+    ersatz, englisch = {}, {}
     if any(not c.get("image") for c in s.get("cards") or []):
         try:
-            ersatz = {c.get("localId"): c.get("image") for c in
-                      _laden(f"https://api.tcgdex.net/v2/en/sets/{quote(set_id)}").get("cards") or [] if c.get("image")}
+            en = _laden(f"https://api.tcgdex.net/v2/en/sets/{quote(set_id)}").get("cards") or []
+            ersatz = {c.get("localId"): c.get("image") for c in en if c.get("image")}
+            englisch = {c.get("localId"): c.get("name") for c in en}
         except Exception:  # noqa: BLE001
             ersatz = {}
     karten = []
     for c in s.get("cards") or []:
         bild = c.get("image") or ersatz.get(c.get("localId"))
-        k = {"nummer": c.get("localId"), "name": c.get("name"),
+        k = {"nummer": c.get("localId"), "name": c.get("name"), "name_en": englisch.get(c.get("localId")),
              "bild_url": f"{bild}/high.webp" if bild else None}
         bekannt = alt.get(k["nummer"])
         if bekannt and bekannt.get("seltenheit") and bekannt.get("cm_quelle"):
             k["seltenheit"], k["art"], k["cm_id"] = bekannt["seltenheit"], bekannt.get("art"), bekannt["cm_quelle"]
+            k["tcg_id"] = bekannt.get("tcg_id")
         else:
             # Seltenheit und Cardmarket-Nummer stehen nur in den Einzeldaten der Karte –
             # einmal laden, danach wiederverwenden
             try:
                 d = _laden(f"https://api.tcgdex.net/v2/de/cards/{quote(c['id'])}")
                 k["seltenheit"], k["art"] = d.get("rarity"), d.get("category")
-                k["cm_id"] = ((d.get("pricing") or {}).get("cardmarket") or {}).get("idProduct")
+                preise = d.get("pricing") or {}
+                k["cm_id"] = (preise.get("cardmarket") or {}).get("idProduct")
+                k["tcg_id"] = next((v.get("productId") for v in (preise.get("tcgplayer") or {}).values()
+                                    if isinstance(v, dict) and v.get("productId")), None)
             except Exception:  # noqa: BLE001
                 if bekannt:
                     k["seltenheit"], k["art"] = bekannt.get("seltenheit"), bekannt.get("art")
@@ -306,6 +311,7 @@ def _tcgcsv_karten(produkte: list[dict]) -> list[dict]:
             continue
         bild = p.get("imageUrl") or None
         karten.append({
+            "tcg_id": p.get("productId"),
             "nummer": ext.get("Number"), "name": p.get("name"), "seltenheit": ext.get("Rarity"),
             "art": ext.get("CardType") or ext.get("Card Type") or ext.get("Type") or ext.get("Category"),
             "bild_url": bild.replace("_200w.", "_400w.") if bild else None,
@@ -317,8 +323,7 @@ def _tcgcsv(gruppe: str, set_name: str | None, kontext: dict) -> list[dict]:
     kategorie = quellen.TCGCSV_KATEGORIEN[kontext["spiel"]]
     time.sleep(0.2)
     alle = _laden(f"https://tcgcsv.com/tcgplayer/{kategorie}/{quote(gruppe)}/products").get("results") or []
-    from . import produkte
-    kontext["sealed"] = produkte.sealed(alle)  # versiegelte Produkte kommen aus derselben Liste
+    kontext["tcg_alle"] = alle  # versiegelte Produkte und Preise kommen aus derselben Liste
     return _tcgcsv_karten(alle)
 
 
@@ -341,14 +346,15 @@ def _liste_speichern(rid: int, spiel: str, extern_id: str, karten: list[dict]):
             url = None
         if url:
             urls.add(url)
-        cm = k.get("cm_id")
+        cm, tcg = k.get("cm_id"), k.get("tcg_id")
         zeilen.append((rid, spiel, pos, _text(k.get("nummer"), 40), _text(k.get("name")), _text(k.get("seltenheit"), 60),
                        _text(k.get("art"), 120), _text(k.get("variante"), 60), url,
-                       int(cm) if str(cm or "").isdigit() else None))
+                       int(cm) if str(cm or "").isdigit() else None, int(tcg) if str(tcg or "").isdigit() else None,
+                       k.get("tcg_preis")))
     with db.verbindung() as con:
         con.execute("DELETE FROM karten WHERE release_id = ?", (rid,))
-        con.executemany("INSERT INTO karten (release_id, spiel, pos, nummer, name, seltenheit, art, variante, bild_url, cm_quelle) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?)", zeilen)
+        con.executemany("INSERT INTO karten (release_id, spiel, pos, nummer, name, seltenheit, art, variante, bild_url, "
+                        "cm_quelle, tcg_id, tcg_preis) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", zeilen)
         con.executemany("INSERT OR IGNORE INTO kartenbilder (url, spiel) VALUES (?, ?)", [(u, spiel) for u in urls])
         con.execute("INSERT INTO kartenlisten (release_id, spiel, extern_id, anzahl, abgerufen, fehler) VALUES (?,?,?,?,?,NULL) "
                     "ON CONFLICT(release_id) DO UPDATE SET spiel = excluded.spiel, extern_id = excluded.extern_id, "
@@ -516,16 +522,20 @@ def _abrufen_intern(spiel: str, alle: bool) -> str:
             if q == "tcgdex":
                 with db.verbindung() as con:
                     kontext["bisher"] = {r["nummer"]: dict(r) for r in con.execute(
-                        "SELECT nummer, seltenheit, art, cm_quelle FROM karten WHERE release_id = ?", (s["release_id"],))}
+                        "SELECT nummer, seltenheit, art, cm_quelle, tcg_id FROM karten WHERE release_id = ?", (s["release_id"],))}
             karten = LISTEN[q](kennung, s["quell_name"], kontext)
-            _liste_speichern(s["release_id"], spiel, s["extern_id"], karten)
+            from . import produkte
+            tcg = None
             try:
-                from . import produkte
-                produkte.speichern(s["release_id"], spiel,
-                                   produkte.laden(spiel, db.release(s["release_id"]) or {}, s["extern_id"], kontext))
+                # TCGplayer: versiegelte Produkte, Ersatzbilder und Marktpreise für die Reihenfolge der Versionen
+                tcg = produkte.tcg_daten(spiel, db.release(s["release_id"]) or {}, s["extern_id"], kontext)
+                produkte.karten_ergaenzen(karten, tcg)
             except Exception as e:  # noqa: BLE001
-                log.warning("Produkte zu %s nicht abrufbar: %s", s["release_name"], e)
-            kontext.pop("sealed", None)
+                log.warning("TCGplayer-Daten zu %s nicht abrufbar: %s", s["release_name"], e)
+            kontext.pop("tcg_alle", None)
+            _liste_speichern(s["release_id"], spiel, s["extern_id"], karten)
+            if tcg is not None:
+                produkte.speichern(s["release_id"], spiel, tcg["sealed"])
         except Exception as e:  # noqa: BLE001
             fehler += 1
             log.warning("Kartenliste %s (%s) fehlgeschlagen: %s", s["release_name"], s["extern_id"], e)
@@ -696,6 +706,26 @@ def anzahlen(eigene_nur: bool = False) -> dict[int, int]:
     return eigene | {rid: eigene[ziel] for rid, ziel in _wellen(aktiv, eigene).items()}
 
 
+def _produkte_ausgabe(spiel: str, produkte: list) -> list[dict]:
+    from . import preise
+    return [{"name": p["name_de"] or p["name"], "name_en": p["name"] if p["name_de"] else None,
+             "bild": f"/karten/bild/{spiel}/{p['datei']}" if p["datei"] else None,
+             **({"cardmarket": pp} if pp else {})} for p, pp in zip(produkte, preise.fuer_release(spiel, produkte))]
+
+
+def produkte_liste(rid: int) -> list[dict] | None:
+    """Nur die Produkte eines Sets (für die Detailansicht im Kalender)."""
+    r = db.release(rid, mit_spiel=True)
+    if not r or not ist_aktiv(r["spiel"]):
+        return None
+    from . import produkte as produkte_modul
+    produkte = produkte_modul.fuer_release(rid)
+    if not produkte:
+        ziel = _wellen({r["spiel"]}, anzahlen(eigene_nur=True)).get(rid)
+        produkte = produkte_modul.fuer_release(ziel) if ziel else []
+    return _produkte_ausgabe(r["spiel"], produkte)
+
+
 def liste(rid: int) -> dict | None:
     r = db.release(rid, mit_spiel=True)
     if not r or not ist_aktiv(r["spiel"]):
@@ -722,15 +752,12 @@ def liste(rid: int) -> dict | None:
     q = QUELLE_JE_SPIEL[r["spiel"]]
     from . import preise, setbilder
     preisliste = preise.fuer_release(r["spiel"], karten)
-    produkt_preise = preise.fuer_release(r["spiel"], produkte)
     return {
         "release": {**{k: r[k] for k in ("id", "spiel", "spiel_name", "spiel_farbe", "name", "name_de", "code", "typ", "datum",
                                          "genauigkeit", "status_effektiv")}, **setbilder.zuordnung().get(rid, {})},
         "quelle": {"name": QUELLEN_NAMEN[q], "url": QUELLEN_LINKS[q]},
         "abgerufen": kl["abgerufen"] if kl else None,
-        "produkte": [{"name": p["name_de"] or p["name"], "name_en": p["name"] if p["name_de"] else None,
-                      "bild": f"/karten/bild/{r['spiel']}/{p['datei']}" if p["datei"] else None,
-                      **({"cardmarket": pp} if pp else {})} for p, pp in zip(produkte, produkt_preise)],
+        "produkte": _produkte_ausgabe(r["spiel"], produkte),
         "preise_stand": preise.stand_fuer(r["spiel"]) if preise.aktiv() else None,
         "karten": [{"nummer": k["nummer"], "name": k["name"], "seltenheit": k["seltenheit"], "art": k["art"],
                     "variante": k["variante"],

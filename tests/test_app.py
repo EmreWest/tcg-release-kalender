@@ -480,7 +480,7 @@ def _kartenquelle(monkeypatch, release_id):
     ]
     monkeypatch.setattr(karten, "sets_verknuepfen", verknuepfen)
     from app import produkte
-    monkeypatch.setattr(produkte, "laden", lambda *a: [])
+    monkeypatch.setattr(produkte, "tcg_daten", lambda *a: {"sealed": [], "karten": [], "preise": {}})
     monkeypatch.setattr(karten, "LISTEN", {**karten.LISTEN, "scryfall": lambda kennung, name, kontext: liste})
     abrufe = []
     monkeypatch.setattr(karten, "_herunterladen", lambda url: abrufe.append(url) or _png())
@@ -546,7 +546,7 @@ def test_kartenquellen_parser(monkeypatch):
                           {"name": "CardType", "value": "Leader"}]},
     ]
     k = karten._tcgcsv_karten(produkte)
-    assert k == [{"nummer": "OP18-021", "name": "Franky", "seltenheit": "L", "art": "Leader",
+    assert k == [{"tcg_id": None, "nummer": "OP18-021", "name": "Franky", "seltenheit": "L", "art": "Leader",
                   "bild_url": "https://tcgplayer-cdn.tcgplayer.com/product/2_400w.jpg"}]
 
     swu = {"data": [
@@ -817,6 +817,9 @@ def test_versiegelte_produkte(client, monkeypatch):
     assert p["Stürmische Funken Display"]["cardmarket"]["trend"] == 149.9 and p["Stürmische Funken Display"]["bild"]
     assert p["Stürmische Funken 3er-Blister Zapdos"]["cardmarket"]["trend"] == 19.5
     assert p["Stürmische Funken Top-Trainer-Box"]["name_en"] == "Surging Sparks Elite Trainer Box"
+    # Dieselben Produkte für die Detailansicht im Kalender
+    assert client.get(f"/api/produkte/{rid}").json()["produkte"] == d["produkte"]
+    assert client.get("/api/produkte/999999").status_code == 404
     # Aufräumen lässt Produktbilder stehen
     karten._aufraeumen("pokemon")
     assert client.get(p["Stürmische Funken Display"]["bild"]).status_code == 200
@@ -839,3 +842,33 @@ def test_versionen_nach_rang():
     # Nur eine besondere Version in der Liste: offen lassen
     e = preise._nach_rang([k(40, "Zorro (SP)")], [1, 2], preis)
     assert e[40][0] is None
+    # Mit TCGplayer-Marktpreisen zählt der Markt statt der Seltenheit (SIR teurer als Mega Hyper Rare)
+    t = lambda i, selten, usd: {**k(i, "Mega-Rayquaza-ex", selten), "tcg_preis": usd}
+    e = preise._nach_rang([t(50, "Selten, besondere Illustration", 300.0), t(51, "Mega-Hyper-Selten", 120.0),
+                           t(52, "Doppelselten", 1.0)], [1, 2, 3], {1: 0.9, 2: 260.0, 3: 110.0})
+    assert e[50][0] == 2 and e[51][0] == 3 and e[52][0] == 1
+
+
+def test_tcgplayer_gruppe_und_ergaenzung(monkeypatch):
+    from app import produkte, quellen
+    gruppen = [
+        {"groupId": 1, "name": "ME: 30th Celebration", "abbreviation": "30C", "publishedOn": "2026-09-16T00:00:00"},
+        {"groupId": 2, "name": "ME: 30th Celebration Classic Collection", "abbreviation": "30C", "publishedOn": "2026-09-16T00:00:00"},
+        {"groupId": 3, "name": "ME06: Delta Reign", "abbreviation": "DLR", "publishedOn": "2026-11-06T00:00:00"},
+    ]
+    monkeypatch.setattr(quellen, "_laden", lambda url: {"results": gruppen})
+    monkeypatch.setattr(produkte.time, "sleep", lambda s: None)
+    finden = lambda name, code=None, datum="2026-09-26": produkte._gruppe_finden(
+        "pokemon", {"name": name, "code": code, "datum": datum}, {})
+    assert finden("30th Celebration") == 1
+    assert finden("30th Classic Collection") == 2
+    assert finden("Delta Reign", "ME06", "2026-11-14") == 3
+    karten = [{"nummer": "141", "name": "Mega-Rayquaza-ex", "bild_url": "x"},
+              {"nummer": "001", "name": "Glurak", "name_en": "Charizard"}]
+    produkte.karten_ergaenzen(karten, {
+        "karten": [{"tcg_id": 7, "nummer": "141/103", "name": "Mega Rayquaza ex - 141/103", "bild_url": "a"},
+                   {"tcg_id": 8, "nummer": "4/102", "name": "Charizard", "bild_url": "b"}],
+        "preise": {7: 120.0, 8: 99.0}})
+    assert karten[0]["tcg_id"] == 7 and karten[0]["tcg_preis"] == 120.0 and karten[0]["bild_url"] == "x"
+    assert karten[1]["tcg_id"] == 8 and karten[1]["bild_url"] == "b"
+    assert produkte.sealed([{"name": "Delta Reign Half Booster Box", "productId": 9, "extendedData": []}])

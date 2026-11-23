@@ -20,13 +20,13 @@ MAX_PRODUKTE = 16
 
 # Was in einer Übersicht für Kundschaft nur stört: Codes, Kartons, Händler-Sonderausgaben, Sets aus mehreren Stück
 _WEG = re.compile(
-    r"code card|\bcase\b|set of \d|\[set of|half booster box|fun pack|checklane|pokemon center|exclusive|art bundle|"
-    r"prerelease|pre-release|\bpromo|jumbo|\bsealed\b.*\blot\b|display \(\d+\)|\bkit\b.*\bstore\b|\bmystery\b|"
+    r"code card|\bcostco\b|\bwalmart\b|\bsam's club\b|\bcase\b|set of \d|\[set of|fun pack|checklane|pokemon center|exclusive|art bundle|"
+    r"prerelease|pre-release|\bpromo|jumbo|\bsealed\b.*\blot\b|\bkit\b.*\bstore\b|\bmystery\b|"
     r"\bsample\b|\bdemo\b|tournament|\bplaymat\b|\bsleeves?\b|\bdeck box\b|\bbinder\b|\bportfolio\b|\bdice\b|"
     r"don!! card|\btoken\b|energy card|life counter", re.I)
 
 # Reihenfolge in der Anzeige: große Produkte zuerst
-_RANG = [r"booster box|display", r"elite trainer|top-trainer", r"collector booster", r"bundle", r"build & battle",
+_RANG = [r"(?<!half )booster box|display", r"half booster box", r"elite trainer|top-trainer", r"collector booster", r"bundle", r"build & battle",
          r"booster pack|^.*booster$|sleeved", r"blister", r"deck", r"tin", r"collection|kollektion"]
 
 
@@ -36,7 +36,7 @@ def _rang(name: str) -> int:
 
 # Englische Produktbezeichnungen und ihre deutsche Entsprechung (längere zuerst)
 _DEUTSCH = [
-    ("elite trainer box", "Top-Trainer-Box"), ("play booster display", "Play-Booster-Display"),
+    ("elite trainer box", "Top-Trainer-Box"), ("half booster box", "Display (18 Booster)"), ("play booster display", "Play-Booster-Display"),
     ("collector booster display", "Collector-Booster-Display"), ("collector booster pack", "Collector-Booster"),
     ("sleeved play booster pack", "Sleeved Play-Booster"), ("play booster pack", "Play-Booster"),
     ("draft booster pack", "Draft-Booster"), ("set booster pack", "Set-Booster"), ("sleeved booster pack", "Sleeved Booster"),
@@ -57,7 +57,8 @@ def _norm(text: str | None) -> str:
 
 
 def _ohne_praefix(name: str) -> str:
-    return quellen._TCGCSV_PRAEFIX.sub("", name or "").strip()
+    name = quellen._TCGCSV_PRAEFIX.sub("", name or "").strip()
+    return re.sub(r"^[A-Z]{1,4}:\s+", "", name)  # z. B. „ME: 30th Celebration“
 
 
 def sealed(produkte: list[dict]) -> list[dict]:
@@ -114,32 +115,92 @@ def _gruppe_finden(spiel: str, release: dict, kontext: dict) -> int | None:
             cache[kategorie] = []
         time.sleep(0.2)
     name, code = _norm(release.get("name")), _norm(release.get("code"))
+    woerter = set(re.findall(r"[a-z0-9]+", (release.get("name") or "").lower()))
     d = date.fromisoformat(release["datum"])
     beste = None
     for g in cache[kategorie]:
-        gname = _norm(_ohne_praefix(g.get("name")))
+        ohne = _ohne_praefix(g.get("name"))
+        gname, gwoerter = _norm(ohne), set(re.findall(r"[a-z0-9]+", ohne.lower()))
         gcode = _norm(g.get("abbreviation"))
         try:
             abstand = abs((date.fromisoformat((g.get("publishedOn") or "")[:10]) - d).days)
         except ValueError:
             abstand = 9999
-        if gname == name or (code and gcode == code and abstand <= 120):
-            wert = (gname == name, -abstand)
-            if beste is None or wert > beste[0]:
-                beste = (wert, g["groupId"])
+        if gname == name:
+            wert = (3, 0, -abstand)
+        elif len(woerter) >= 2 and woerter <= gwoerter and abstand <= 45:
+            # z. B. „30th Classic Collection“ in „30th Celebration Classic Collection“
+            wert = (2, -len(gwoerter - woerter), -abstand)
+        elif code and gcode == code and abstand <= 120:
+            wert = (1, 0, -abstand)
+        else:
+            continue
+        if beste is None or wert > beste[0]:
+            beste = (wert, g["groupId"])
     return beste[1] if beste else None
 
 
-def laden(spiel: str, release: dict, extern_id: str, kontext: dict) -> list[dict] | None:
-    """Versiegelte Produkte eines Sets. Bei TCGCSV-Spielen liegen sie schon aus der Kartenliste vor."""
+def tcg_daten(spiel: str, release: dict, extern_id: str, kontext: dict) -> dict:
+    """TCGplayer-Daten eines Sets: versiegelte Produkte, Einzelkarten (für Bilder und Zuordnung) und
+    Marktpreise in USD (nur für die Reihenfolge mehrerer Versionen einer Karte; angezeigt wird Cardmarket)."""
+    kategorie = TCG_KATEGORIEN.get(spiel)
     if extern_id.startswith("tcgcsv:"):
-        return kontext.pop("sealed", None)
-    gruppe = _gruppe_finden(spiel, release, kontext)
-    if not gruppe:
-        return []
-    time.sleep(0.2)
-    produkte = quellen._laden(f"https://tcgcsv.com/tcgplayer/{TCG_KATEGORIEN[spiel]}/{quote(str(gruppe))}/products")
-    return sealed(produkte.get("results") or [])
+        gruppe, alle = extern_id.split(":", 1)[1], kontext.pop("tcg_alle", None)
+    else:
+        gruppe, alle = _gruppe_finden(spiel, release, kontext), None
+    if not kategorie or not gruppe:
+        return {"sealed": [], "karten": [], "preise": {}}
+    if alle is None:
+        time.sleep(0.2)
+        alle = quellen._laden(f"https://tcgcsv.com/tcgplayer/{kategorie}/{quote(str(gruppe))}/products").get("results") or []
+    preise: dict[int, float] = {}
+    try:
+        time.sleep(0.2)
+        for p in quellen._laden(f"https://tcgcsv.com/tcgplayer/{kategorie}/{quote(str(gruppe))}/prices").get("results") or []:
+            wert = p.get("marketPrice") or p.get("midPrice")
+            if wert and wert > preise.get(p["productId"], 0):
+                preise[p["productId"]] = wert
+    except Exception:  # noqa: BLE001
+        pass
+    karten = []
+    for p in alle:
+        ext = {e.get("name"): e.get("value") for e in p.get("extendedData") or []}
+        if ext.get("Number"):
+            bild = p.get("imageUrl") or None
+            karten.append({"tcg_id": p.get("productId"), "nummer": ext["Number"], "name": p.get("name") or "",
+                           "bild_url": bild.replace("_200w.", "_400w.") if bild else None})
+    return {"sealed": sealed(alle), "karten": karten, "preise": preise}
+
+
+def _nummer(text: str | None) -> str:
+    teil = (text or "").split("/")[0].strip().upper()
+    return re.sub(r"^0+(?=\d)", "", re.sub(r"[^A-Z0-9-]", "", teil))
+
+
+def karten_ergaenzen(karten: list[dict], daten: dict):
+    """TCGplayer-Produktnummer, -Marktpreis und (falls unser Bild fehlt) -Bild zu den Karten ergänzen."""
+    tcg = daten.get("karten") or []
+    preise = daten.get("preise") or {}
+    nach_nummer: dict[str, list] = {}
+    nach_name: dict[str, list] = {}
+    for t in tcg:
+        nach_nummer.setdefault(_nummer(t["nummer"]), []).append(t)
+        nach_name.setdefault(_norm(re.sub(r"\s+-\s+[\w/]+$", "", t["name"])), []).append(t)
+    bekannt = {t["tcg_id"]: t for t in tcg}
+    for k in karten:
+        t = bekannt.get(k.get("tcg_id"))
+        if not t:
+            treffer = nach_nummer.get(_nummer(k.get("nummer")), [])
+            if len(treffer) != 1 and k.get("name_en"):
+                treffer = nach_name.get(_norm(k["name_en"]), [])  # z. B. Sammlungen mit Originalnummern
+            t = treffer[0] if len(treffer) == 1 else None
+        if not t:
+            continue
+        k["tcg_id"] = t["tcg_id"]
+        if preise.get(t["tcg_id"]):
+            k["tcg_preis"] = preise[t["tcg_id"]]
+        if not k.get("bild_url") and t.get("bild_url"):
+            k["bild_url"] = t["bild_url"]
 
 
 def speichern(rid: int, spiel: str, produkte: list[dict] | None):

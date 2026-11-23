@@ -319,6 +319,7 @@ Zusätzlich braucht der Container ausgehenden Zugriff auf `cards.scryfall.io`, `
 Hinweise:
 
 - Ein Set bekommt nur dann eine Kartenliste, wenn es einem Set in der Quelle zugeordnet werden kann (gleicher Name oder Set-Code). Manuell angelegte Termine mit abweichendem Namen bleiben ohne Liste.
+- Fehlt in der Datenquelle ein Kartenbild (z. B. bei Pokémon-Sonderserien wie der „30th Classic Collection“), wird das Bild aus dem TCGplayer-Katalog genommen.
 - Bei manchen Herstellern sind die Bilder Pressebilder mit „SAMPLE“-Aufdruck (z. B. One Piece, Dragon Ball Super, Gundam aus dem TCGplayer-Katalog).
 - Die Kartenbilder sind urheberrechtlich geschützt. Prüfe vor dem Freischalten, ob die Nutzung auf deiner Seite zulässig ist.
 
@@ -327,13 +328,13 @@ Hinweise:
 Standardmäßig an (abschaltbar unter Verwaltung → Kartenlisten). Cardmarket veröffentlicht Produktkatalog und Preisführer täglich als freie Dateien; der Container lädt sie einmal am Tag für die Spiele mit freigeschalteten Kartenlisten und zeigt je Karte den Preistrend, in der Großansicht zusätzlich 30-Tage-Schnitt, günstigstes Angebot und Foil-Trend, sowie einen Link zu Cardmarket. Die Kartenseite lässt sich nach Preis sortieren.
 
 - Magic und Pokémon werden über die Cardmarket-Produktnummer der Datenquelle zugeordnet, alle anderen Spiele über Erweiterung, Kartennummer und Namen.
-- Gibt es mehrere Versionen einer Karte (normale und Alternate-Art-Version, verschiedene Seltenheiten), werden sie anhand von Seltenheit und Preis einander zugeordnet: Die gewöhnliche Version bekommt die günstigste Cardmarket-Version, die seltenste die teuerste. Die Großansicht weist auf diese Zuordnung hin. Lässt es sich nicht entscheiden (z. B. zwei gleichwertige Versionen), stehen Preisspanne und ein Link auf die Versionsliste bei Cardmarket da.
+- Gibt es mehrere Versionen einer Karte (normale und Alternate-Art-Version, verschiedene Seltenheiten), werden sie über die Preisreihenfolge einander zugeordnet: Die eigenen Karten werden nach dem TCGplayer-Marktpreis des Sets geordnet (fehlt der, nach Seltenheit), die Cardmarket-Versionen nach Preistrend, dann wird paarweise zugeordnet. So landet z. B. bei Pokémon die meist teurere Special Illustration Rare richtig, auch wenn die Mega Hyper Rare (Gold) die höhere Seltenheit ist. Die Großansicht weist auf diese Zuordnung hin. Lässt es sich nicht entscheiden (z. B. zwei gleichwertige Versionen), stehen Preisspanne und ein Link auf die Versionsliste bei Cardmarket da.
 - Für Union Arena, Shadowverse: Evolve, hololive OCG und Grand Archive führt Cardmarket keine Einzelkarten, für Weiß Schwarz nur ältere Sets.
 - Nötig ist ausgehender Zugriff auf `downloads.s3.cardmarket.com`.
 
 ### Produkte je Set
 
-Mit den Kartenlisten lädt der Container auch die versiegelten Produkte jedes Sets aus dem TCGplayer-Katalog (Display, Booster, Bundle, Top-Trainer-Box, Blister …) samt Produktbild; Kartons, Code-Karten und Händler-Sonderausgaben werden weggelassen. Sie stehen auf der Kartenseite unter „Produkte in diesem Set“ mit Preistrend und Cardmarket-Link. Die Namen werden ins Deutsche übertragen, wenn das Muster passt (z. B. „Surging Sparks Elite Trainer Box“ → „Stürmische Funken Top-Trainer-Box“), sonst bleibt der englische Name. Hat ein Set noch keine Karten, aber schon Produkte, führt der Knopf in der Detailansicht zu „Produkte“.
+Mit den Kartenlisten lädt der Container auch die versiegelten Produkte jedes Sets aus dem TCGplayer-Katalog (Display, Booster, Bundle, Top-Trainer-Box, Blister …) samt Produktbild; Kartons, Code-Karten und Händler-Sonderausgaben werden weggelassen. Sie stehen auf der Kartenseite und in der Detailansicht des Kalenders unter „Produkte in diesem Set“ mit Preistrend und Cardmarket-Link. Auch die kleinen Displays (bei Pokémon 18 Booster, bei TCGplayer „Half Booster Box“) sind dabei. Die Namen werden ins Deutsche übertragen, wenn das Muster passt (z. B. „Surging Sparks Elite Trainer Box“ → „Stürmische Funken Top-Trainer-Box“), sonst bleibt der englische Name. Hat ein Set noch keine Karten, aber schon Produkte, führt der Knopf in der Detailansicht zu „Produkte“.
 
 ### Mehrere Wellen
 

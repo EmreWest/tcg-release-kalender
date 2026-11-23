@@ -331,6 +331,14 @@ def api_karten(rid: int):
     return daten
 
 
+@app.get("/api/produkte/{rid}")
+def api_produkte(rid: int):
+    daten = karten.produkte_liste(rid)
+    if daten is None:
+        raise HTTPException(404, "Keine Produkte vorhanden")
+    return {"produkte": daten}
+
+
 @app.get("/api/kartenlisten")
 def api_kartenlisten():
     """Alle Sets mit Kartenliste (nur freigeschaltete Spiele), neueste zuerst."""

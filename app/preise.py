@@ -179,8 +179,15 @@ def _nach_rang(mitglieder: list, versionen: list[int], preis: dict[int, float]) 
     # Versionen ohne Preis (noch keine Verkäufe) sind meist die seltensten – sie kommen ans Ende
     bepreist = sorted((v for v in versionen if preis.get(v)), key=lambda v: preis[v]) + \
         [v for v in versionen if not preis.get(v)]
-    karten = sorted(mitglieder, key=lambda k: (_stufe(k), k["pos"]))
-    stufen = [_stufe(k) for k in karten]
+    # Reihenfolge der eigenen Karten: am besten nach TCGplayer-Marktpreis des Sets (zeigt, welche Version am
+    # Markt begehrter ist, z. B. Special Illustration Rare vor Mega Hyper Rare), sonst nach Seltenheit
+    tcg = [k.get("tcg_preis") if hasattr(k, "get") else k["tcg_preis"] for k in mitglieder]
+    if all(tcg) and len(set(tcg)) == len(tcg):
+        rang = {k["id"]: t for k, t in zip(mitglieder, tcg)}
+    else:
+        rang = {k["id"]: _stufe(k) for k in mitglieder}
+    karten = sorted(mitglieder, key=lambda k: (rang[k["id"]], k["pos"]))
+    stufen = [rang[k["id"]] for k in karten]
     ergebnis = {k["id"]: (None, versionen, False) for k in karten}
     if not any(preis.get(v) for v in versionen) or len(karten) > len(bepreist):
         return ergebnis
@@ -191,10 +198,10 @@ def _nach_rang(mitglieder: list, versionen: list[int], preis: dict[int, float]) 
         paare = [(karten[0], bepreist[0])]
         if len(karten) > 1:
             paare.append((karten[-1], bepreist[-1]))
-        if len(karten) == 1 and stufen[0] > 3.5:
+        if len(karten) == 1 and _stufe(karten[0]) > 3.5:
             return ergebnis  # nur eine besondere Version in der Liste – welche, ist offen
     for karte, version in paare:
-        gleich = stufen.count(_stufe(karte)) > 1
+        gleich = stufen.count(rang[karte["id"]]) > 1
         if not gleich:  # zwei Karten mit gleicher Stufe lassen sich nicht unterscheiden
             ergebnis[karte["id"]] = (version, None, len(versionen) > 1)
     return ergebnis
@@ -205,7 +212,7 @@ def zuordnen(spiel: str) -> dict:
     with db.verbindung() as con:
         produkte = con.execute("SELECT id, name, expansion FROM cm_produkte WHERE spiel = ? AND art = 'einzel'",
                                (spiel,)).fetchall()
-        karten_rows = con.execute("SELECT id, release_id, pos, nummer, name, variante, seltenheit, cm_quelle FROM karten "
+        karten_rows = con.execute("SELECT id, release_id, pos, nummer, name, variante, seltenheit, cm_quelle, tcg_preis FROM karten "
                                   "WHERE spiel = ?", (spiel,)).fetchall()
         preis = {r["id"]: r["trend"] or r["avg30"] or r["low"] for r in con.execute(
             "SELECT id, trend, avg30, low FROM cm_preise WHERE spiel = ?", (spiel,))}
@@ -331,7 +338,9 @@ def produkte_zuordnen(spiel: str) -> int:
         if haeufig:
             passend = [c for c in passend if c[1] == haeufig[0][0]]
         for z in liste:
-            w = _woerter(re.sub(r"[\[\]()]", " ", z["name"]))
+            # TCGplayer „Half Booster Box“ heißt bei Cardmarket „Booster Box (18 Boosters)“
+            name = re.sub(r"half booster box", "booster box 18 boosters", z["name"], flags=re.I)
+            w = _woerter(re.sub(r"[\[\]()]", " ", name))
             treffer = [c[0] for c in passend if c[2] == w]
             if not treffer:  # Reihenfolge und Füllwörter weichen ab, z. B. „3 Pack Blisters [Zapdos]“
                 aehnlich = [(len(w & c[2]) / len(w | c[2]), c[0]) for c in passend if w | c[2]]

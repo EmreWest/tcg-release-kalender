@@ -639,6 +639,7 @@ async function detailZeigen(id) {
       <div class="detail-datum"><b>${esc(datumText)}</b>${ca ? "" : `<span class="countdown${n >= 0 && n <= 7 ? " bald" : ""}">${countdown(r.datum)}</span>`}</div>
       <table class="detail-tabelle">${zeilen.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("")}</table>
       ${r.notiz ? `<p class="detail-notiz">${esc(r.notiz)}</p>` : ""}
+      ${r.produkte ? `<section class="detail-produkte" aria-live="polite"></section>` : ""}
       <div class="detail-aktionen">
         <div class="links">
           <a class="knopf primaer" href="/release/${r.id}.ics" download>In meinen Kalender</a>
@@ -653,6 +654,36 @@ async function detailZeigen(id) {
   dlg.querySelector("[data-teilen]").onclick = () => kopieren(`${location.origin}/?r=${r.id}`, "Link kopiert");
   if (!dlg.open) dlg.showModal();
   urlSchreiben(r.id);
+  if (r.produkte) produkteLaden(r.id, dlg.querySelector(".detail-produkte"));
+}
+
+const EXTERN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
+
+async function produkteLaden(id, ziel) {
+  let liste = [];
+  try {
+    const antwort = await fetch(`/api/produkte/${encodeURIComponent(id)}`);
+    if (antwort.ok) liste = (await antwort.json()).produkte || [];
+  } catch (e) { /* ohne Produkte weiter */ }
+  if (!ziel.isConnected || $("#detail").dataset.r !== String(id)) return;
+  if (!liste.length) { ziel.remove(); return; }
+  const euro = (x) => x.toLocaleString("de-DE", { style: "currency", currency: "EUR", minimumFractionDigits: 2 });
+  ziel.innerHTML = `<h3>Produkte in diesem Set</h3>
+    <div class="produkt-raster kompakt">${liste.map((x) => {
+      const c = x.cardmarket || {};
+      const preis = c.trend ?? c.avg30 ?? c.low;
+      const inhalt = `
+        <span class="produkt-bild">${x.bild ? `<img src="${esc(x.bild)}" alt="" loading="lazy" decoding="async">` : ""}</span>
+        <span class="produkt-text">
+          <span class="produkt-name">${esc(x.name)}</span>
+          ${x.name_en ? `<span class="produkt-en">${esc(x.name_en)}</span>` : ""}
+          ${preis ? `<span class="produkt-preis">Preistrend ${euro(preis)}</span>` : ""}
+          ${c.url ? `<span class="produkt-link">Cardmarket ${EXTERN}</span>` : ""}
+        </span>`;
+      return c.url
+        ? `<a class="produkt" href="${esc(c.url)}" target="_blank" rel="noopener" referrerpolicy="strict-origin-when-cross-origin">${inhalt}</a>`
+        : `<div class="produkt">${inhalt}</div>`;
+    }).join("")}</div>`;
 }
 
 // --- Ereignisse ---------------------------------------------------------------------
@@ -771,6 +802,7 @@ function navigieren(richtung) {
   });
   if (window.matchMedia("(max-width: 900px)").matches) $("#filter-box").open = false;
 
+  const r = new URLSearchParams(location.search).get("r");  // vor dem ersten Umschreiben der Adresse lesen
   try {
     einstellungenLaden();
     filterBauen();
@@ -782,6 +814,5 @@ function navigieren(richtung) {
     $("#inhalt").innerHTML = `<div class="flaeche leer">Die Ansicht konnte nicht aufgebaut werden.<br>
       <button type="button" class="knopf" onclick="location.reload()">Seite neu laden</button></div>`;
   }
-  const r = new URLSearchParams(location.search).get("r");
   if (r) detailZeigen(r);
 })();
