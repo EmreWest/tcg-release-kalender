@@ -150,13 +150,65 @@ def _dateien_laden(spiel: str) -> int:
     return len(produkte)
 
 
+# Typische Wertigkeit von Seltenheiten und Versionen (nur die Reihenfolge innerhalb einer Karte zählt)
+_SELTENHEIT = [
+    (r"mega hyper", 9.5), (r"besondere illustration|special illustration", 9), (r"hyper", 8.5),
+    (r"ultra selten|ultra rare", 7), (r"illustration", 6), (r"glänzend|shiny", 6.5), (r"ace spec", 5),
+    (r"doppelselten|double rare", 5), (r"starlight", 9.5), (r"quarter century", 9), (r"ghost", 8.5),
+    (r"collector|prismatic secret|platinum secret|ultimate", 8), (r"secret|\bsec\b", 7), (r"\bsuper\b|\bsr\b", 5),
+    (r"grand master", 8.8), (r"mythic", 6), (r"fabled|enchanted", 9), (r"legend", 7), (r"iconic|showcase", 8), (r"epic|prestige", 7),
+    (r"majestic|special", 5.5), (r"hyperspace", 4), (r"\bl\b|leader", 4), (r"selten|\brare\b|\br\b", 3),
+    (r"ungewöhnlich|uncommon|\buc\b", 2), (r"häufig|common|\bc\b", 1),
+]
+_ZUSATZ = [(r"serialized|serial", 5), (r"manga", 3), (r"gold", 2.5), (r"\bsp\b", 2), (r"treasure", 2),
+           (r"showcase", 2), (r"prestige", 2), (r"alternate art|alt art|parallel", 1.5), (r"full art", 1),
+           (r"borderless|extended art", 0.8), (r"hyperspace", 0.5)]
+
+
+def _stufe(karte) -> float:
+    selten = (karte["seltenheit"] or "").lower()
+    wert = next((w for muster, w in _SELTENHEIT if re.search(muster, selten)), 3) + selten.count("+")  # „LR+“, „LR++“
+    text = f"{karte['name'] or ''} {karte['variante'] or ''}".lower()
+    return wert + sum(w for muster, w in _ZUSATZ if re.search(muster, text))
+
+
+def _nach_rang(mitglieder: list, versionen: list[int], preis: dict[int, float]) -> dict[int, tuple]:
+    """Mehrere Versionen einer Karte: Karten nach Seltenheit/Version und Cardmarket-Versionen nach Preis
+    ordnen und paarweise zuordnen (die gewöhnliche Version ist fast immer die günstigste).
+    Ergebnis je Karte: (Produktnummer, None, geschätzt) oder (None, Kandidaten, False)."""
+    # Versionen ohne Preis (noch keine Verkäufe) sind meist die seltensten – sie kommen ans Ende
+    bepreist = sorted((v for v in versionen if preis.get(v)), key=lambda v: preis[v]) + \
+        [v for v in versionen if not preis.get(v)]
+    karten = sorted(mitglieder, key=lambda k: (_stufe(k), k["pos"]))
+    stufen = [_stufe(k) for k in karten]
+    ergebnis = {k["id"]: (None, versionen, False) for k in karten}
+    if not any(preis.get(v) for v in versionen) or len(karten) > len(bepreist):
+        return ergebnis
+    if len(karten) == len(bepreist):
+        paare = list(zip(karten, bepreist))
+    else:
+        # Weniger Karten als Versionen: die niedrigste bekommt die günstigste, die höchste die teuerste
+        paare = [(karten[0], bepreist[0])]
+        if len(karten) > 1:
+            paare.append((karten[-1], bepreist[-1]))
+        if len(karten) == 1 and stufen[0] > 3.5:
+            return ergebnis  # nur eine besondere Version in der Liste – welche, ist offen
+    for karte, version in paare:
+        gleich = stufen.count(_stufe(karte)) > 1
+        if not gleich:  # zwei Karten mit gleicher Stufe lassen sich nicht unterscheiden
+            ergebnis[karte["id"]] = (version, None, len(versionen) > 1)
+    return ergebnis
+
+
 def zuordnen(spiel: str) -> dict:
     """Ordnet alle Karten eines Spiels den Cardmarket-Produkten zu."""
     with db.verbindung() as con:
         produkte = con.execute("SELECT id, name, expansion FROM cm_produkte WHERE spiel = ? AND art = 'einzel'",
                                (spiel,)).fetchall()
-        karten_rows = con.execute("SELECT id, release_id, pos, nummer, name, variante, cm_quelle FROM karten WHERE spiel = ?",
-                                  (spiel,)).fetchall()
+        karten_rows = con.execute("SELECT id, release_id, pos, nummer, name, variante, seltenheit, cm_quelle FROM karten "
+                                  "WHERE spiel = ?", (spiel,)).fetchall()
+        preis = {r["id"]: r["trend"] or r["avg30"] or r["low"] for r in con.execute(
+            "SELECT id, trend, avg30, low FROM cm_preise WHERE spiel = ?", (spiel,))}
     if not produkte:
         return {"eindeutig": 0, "mehrdeutig": 0, "produkte": produkte_zuordnen(spiel)}
     bekannt = {p["id"] for p in produkte}
@@ -192,11 +244,8 @@ def zuordnen(spiel: str) -> dict:
         mit_normaler = {schluessel[k["id"]] for k in liste if not variante[k["id"]]}
         ergebnis: dict[int, tuple] = {}
         # Dieselbe Produktnummer bei mehreren Karten (TCGdex ordnet Illustrations-Seltenheiten oft der
-        # normalen Karte zu): dann alle Versionen dieser Karte in der Erweiterung als Spanne zeigen
+        # normalen Karte zu): dann gelten alle Versionen dieser Karte in der Erweiterung als Kandidaten
         haeufigkeit = Counter(k["cm_quelle"] for k in liste if k["cm_quelle"] in bekannt)
-        erste = {}
-        for k in sorted(liste, key=lambda x: x["pos"]):
-            erste.setdefault(k["cm_quelle"], k["id"])
         # 1. Hauptzuordnung über die Cardmarket-Erweiterung mit den meisten Treffern
         haupt = beste_erweiterung({x for x in schluessel.values() if x})
         index = je_exp.get(haupt, {})
@@ -204,10 +253,8 @@ def zuordnen(spiel: str) -> dict:
             if k["cm_quelle"] and k["cm_quelle"] in bekannt:  # Nummer direkt aus der Quelle (Scryfall, TCGdex)
                 exp, key = info[k["cm_quelle"]]
                 versionen = je_exp.get(exp, {}).get(key or "", [])
-                if haeufigkeit[k["cm_quelle"]] > 1 and len(versionen) > 1 and erste[k["cm_quelle"]] != k["id"]:
-                    # Die erste (normale) Karte behält die Nummer, die übrigen teilen sich die anderen Versionen
-                    andere = [v for v in versionen if v != k["cm_quelle"]]
-                    ergebnis[k["id"]] = (andere[0], None) if len(andere) == 1 else (None, andere)
+                if haeufigkeit[k["cm_quelle"]] > 1 and len(versionen) > 1:
+                    ergebnis[k["id"]] = (None, versionen)
                 else:
                     ergebnis[k["id"]] = (k["cm_quelle"], None)
                 continue
@@ -227,15 +274,27 @@ def zuordnen(spiel: str) -> dict:
                     ergebnis[k["id"]] = (kandidaten[0], None)
                 elif len(kandidaten) > 1:
                     ergebnis[k["id"]] = (None, kandidaten)
+        # 3. Mehrere Versionen: nach Seltenheit und Preis einander zuordnen
+        gruppen: dict[tuple, list] = defaultdict(list)
+        for k in liste:
+            cm, mehrere = ergebnis.get(k["id"], (None, None))
+            if mehrere:
+                gruppen[tuple(sorted(mehrere))].append(k)
+        geschaetzt = {}
+        for versionen, mitglieder in gruppen.items():
+            for kid, (cm, mehrere, schaetzung) in _nach_rang(mitglieder, list(versionen), preis).items():
+                ergebnis[kid] = (cm, mehrere)
+                geschaetzt[kid] = schaetzung
         for k in liste:
             cm, mehrere = ergebnis.get(k["id"], (None, None))
             if cm:
                 eindeutig += 1
             elif mehrere:
                 mehrdeutig += 1
-            updates.append((cm, ",".join(map(str, sorted(mehrere))) if mehrere else None, k["id"]))
+            updates.append((cm, ",".join(map(str, sorted(mehrere))) if mehrere else None,
+                            1 if geschaetzt.get(k["id"]) else 0, k["id"]))
     with db.verbindung() as con:
-        con.executemany("UPDATE karten SET cm_id = ?, cm_kandidaten = ? WHERE id = ?", updates)
+        con.executemany("UPDATE karten SET cm_id = ?, cm_kandidaten = ?, cm_geschaetzt = ? WHERE id = ?", updates)
     return {"eindeutig": eindeutig, "mehrdeutig": mehrdeutig, "produkte": produkte_zuordnen(spiel)}
 
 
@@ -365,6 +424,8 @@ def fuer_release(spiel: str, karten_rows: list[dict]) -> list[dict | None]:
         if k.get("cm_id"):
             p = preise.get(k["cm_id"]) or {}
             e = {"url": cm_url(spiel, k["cm_id"])}
+            if k.get("cm_geschaetzt"):
+                e["geschaetzt"] = True
             for feld in ("trend", "avg30", "low", "trend_foil"):
                 if p.get(feld):
                     e[feld] = round(p[feld], 2)

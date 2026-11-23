@@ -716,7 +716,8 @@ def liste(rid: int) -> dict | None:
         return None
     with db.verbindung() as con:
         karten = [dict(k) for k in con.execute(
-            "SELECT k.nummer, k.name, k.seltenheit, k.art, k.variante, k.cm_id, k.cm_kandidaten, b.datei FROM karten k "
+            "SELECT k.nummer, k.name, k.seltenheit, k.art, k.variante, k.cm_id, k.cm_kandidaten, k.cm_geschaetzt, b.datei "
+            "FROM karten k "
             "LEFT JOIN kartenbilder b ON b.url = k.bild_url WHERE k.release_id = ? ORDER BY k.pos", (quelle_rid,))]
     q = QUELLE_JE_SPIEL[r["spiel"]]
     from . import preise, setbilder

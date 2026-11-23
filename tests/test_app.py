@@ -762,8 +762,9 @@ def test_cardmarket_zuordnung_und_preise(client, monkeypatch):
     preise.aktualisieren()
     k = {x["name"]: x.get("cardmarket") for x in client.get(f"/api/karten/{rid}").json()["karten"]}
     assert k["Ruffy"]["trend"] == 1.5 and k["Ruffy"]["url"].endswith("/de/OnePiece/Products?idProduct=1")
-    assert k["Zorro"]["von"] == 0.2 and k["Zorro"]["bis"] == 40.0 and "/Products/Singles?idExpansion=9&searchString=Zorro" in k["Zorro"]["url"]
-    assert k["Zorro (Parallel)"]["versionen"] == 2
+    # Zwei Versionen: die normale Karte bekommt die günstige, die Parallel-Version die teure
+    assert k["Zorro"]["trend"] == 0.2 and k["Zorro"]["geschaetzt"] and k["Zorro"]["url"].endswith("idProduct=2")
+    assert k["Zorro (Parallel)"]["trend"] == 40.0 and k["Zorro (Parallel)"]["url"].endswith("idProduct=3")
     assert k["Nami (SP)"]["trend"] == 12.0  # einzige Version in dieser Erweiterung = die SP-Version
     assert "trend" not in k["Unbekannt"] and "/Products/Singles?searchString=Unbekannt" in k["Unbekannt"]["url"]
     assert "/Products/Search" not in json.dumps(k)  # die allgemeine Suche verlangt eine Anmeldung
@@ -819,3 +820,22 @@ def test_versiegelte_produkte(client, monkeypatch):
     # Aufräumen lässt Produktbilder stehen
     karten._aufraeumen("pokemon")
     assert client.get(p["Stürmische Funken Display"]["bild"]).status_code == 200
+
+
+
+def test_versionen_nach_rang():
+    from app import preise
+    k = lambda i, name, selten=None, var=None, pos=0: {"id": i, "name": name, "seltenheit": selten, "variante": var, "pos": pos}
+    preis = {1: 0.05, 2: 180.0, 3: 2.5}
+    e = preise._nach_rang([k(10, "Mega-Rayquaza-ex", "Doppelselten"), k(11, "Mega-Rayquaza-ex", "Selten, besondere Illustration"),
+                           k(12, "Mega-Rayquaza-ex", "Ultra Selten")], [1, 2, 3], preis)
+    assert e[10][0] == 1 and e[12][0] == 3 and e[11][0] == 2
+    # Mehr Versionen als Karten: normale -> günstigste, besondere -> teuerste
+    e = preise._nach_rang([k(20, "Nami"), k(21, "Nami (Manga)")], [1, 2, 3], preis)
+    assert e[20][0] == 1 and e[21][0] == 2
+    # Zwei gleichwertige Karten bleiben offen
+    e = preise._nach_rang([k(30, "Luffy (Parallel)"), k(31, "Luffy (Parallel)")], [1, 2], preis)
+    assert e[30][0] is None and e[30][1] == [1, 2]
+    # Nur eine besondere Version in der Liste: offen lassen
+    e = preise._nach_rang([k(40, "Zorro (SP)")], [1, 2], preis)
+    assert e[40][0] is None

@@ -77,7 +77,7 @@ function kopfRendern() {
     <div class="karten-raster" id="k-raster"></div>
     <p class="hinweis karten-quelle">Kartendaten und -bilder: <a href="${esc(DATEN.quelle.url)}" target="_blank" rel="noopener">${esc(DATEN.quelle.name)}</a>,
       ${DATEN.abgerufen ? `Stand ${new Date(DATEN.abgerufen).toLocaleDateString("de-DE")}.` : ""} Produktbilder: TCGplayer-Katalog.
-      ${DATEN.preise_stand ? `Preise: Preistrend laut <a href="https://www.cardmarket.com/de" target="_blank" rel="noopener">Cardmarket</a>, Stand ${new Date(DATEN.preise_stand).toLocaleDateString("de-DE")}; bei mehreren Versionen einer Karte die Spanne aller Versionen.` : ""}
+      ${DATEN.preise_stand ? `Preise: Preistrend laut <a href="https://www.cardmarket.com/de" target="_blank" rel="noopener">Cardmarket</a>, Stand ${new Date(DATEN.preise_stand).toLocaleDateString("de-DE")}; mehrere Versionen einer Karte werden anhand von Seltenheit und Preis zugeordnet, ist das nicht eindeutig, steht die Preisspanne da.` : ""}
       Alle Kartenbilder © der jeweiligen Rechteinhaber.
       Bei neuen Sets kommen während der Spoiler-Phase laufend Karten dazu.</p>`;
   $("#k-suche").addEventListener("input", rasterRendern);
@@ -164,6 +164,7 @@ function grossansicht(pos) {
       if (c.avg30) zeilen.push(["30-Tage-Schnitt", euro(c.avg30)]);
       if (c.low) zeilen.push(["Ab", euro(c.low)]);
       if (c.trend_foil) zeilen.push(["Trend Foil/Holo", euro(c.trend_foil)]);
+      if (c.geschaetzt) zeilen.push(["Hinweis", `<span class="hinweis" style="margin:0">Cardmarket führt mehrere Versionen dieser Karte; diese wurde anhand von Seltenheit und Preis zugeordnet.</span>`]);
     }
   }
   dlg.innerHTML = `

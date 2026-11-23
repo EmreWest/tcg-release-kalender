@@ -327,7 +327,7 @@ Hinweise:
 Standardmäßig an (abschaltbar unter Verwaltung → Kartenlisten). Cardmarket veröffentlicht Produktkatalog und Preisführer täglich als freie Dateien; der Container lädt sie einmal am Tag für die Spiele mit freigeschalteten Kartenlisten und zeigt je Karte den Preistrend, in der Großansicht zusätzlich 30-Tage-Schnitt, günstigstes Angebot und Foil-Trend, sowie einen Link zu Cardmarket. Die Kartenseite lässt sich nach Preis sortieren.
 
 - Magic und Pokémon werden über die Cardmarket-Produktnummer der Datenquelle zugeordnet, alle anderen Spiele über Erweiterung, Kartennummer und Namen.
-- Gibt es mehrere Versionen einer Karte (normale und Alternate-Art-Version, verschiedene Seltenheiten), zeigt die Seite die Preisspanne und verlinkt auf die Cardmarket-Suche.
+- Gibt es mehrere Versionen einer Karte (normale und Alternate-Art-Version, verschiedene Seltenheiten), werden sie anhand von Seltenheit und Preis einander zugeordnet: Die gewöhnliche Version bekommt die günstigste Cardmarket-Version, die seltenste die teuerste. Die Großansicht weist auf diese Zuordnung hin. Lässt es sich nicht entscheiden (z. B. zwei gleichwertige Versionen), stehen Preisspanne und ein Link auf die Versionsliste bei Cardmarket da.
 - Für Union Arena, Shadowverse: Evolve, hololive OCG und Grand Archive führt Cardmarket keine Einzelkarten, für Weiß Schwarz nur ältere Sets.
 - Nötig ist ausgehender Zugriff auf `downloads.s3.cardmarket.com`.
 

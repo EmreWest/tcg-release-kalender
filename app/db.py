@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS karten (
     bild_url TEXT,
     cm_quelle INTEGER,
     cm_id INTEGER,
-    cm_kandidaten TEXT
+    cm_kandidaten TEXT,
+    cm_geschaetzt INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_karten_release ON karten(release_id, pos);
 CREATE INDEX IF NOT EXISTS idx_karten_spiel_bild ON karten(spiel, bild_url);
@@ -218,9 +219,10 @@ def init():
         if "art" not in {r["name"] for r in con.execute("PRAGMA table_info(cm_produkte)")}:
             con.execute("ALTER TABLE cm_produkte ADD COLUMN art TEXT NOT NULL DEFAULT 'einzel'")
         spalten = {r["name"] for r in con.execute("PRAGMA table_info(karten)")}
-        for spalte in ("cm_quelle", "cm_id", "cm_kandidaten"):
+        for spalte, typ in (("cm_quelle", "INTEGER"), ("cm_id", "INTEGER"), ("cm_kandidaten", "TEXT"),
+                            ("cm_geschaetzt", "INTEGER NOT NULL DEFAULT 0")):
             if spalte not in spalten:
-                con.execute(f"ALTER TABLE karten ADD COLUMN {spalte} {'TEXT' if spalte == 'cm_kandidaten' else 'INTEGER'}")
+                con.execute(f"ALTER TABLE karten ADD COLUMN {spalte} {typ}")
         leer = con.execute("SELECT COUNT(*) FROM spiele").fetchone()[0] == 0
     if not os.path.exists(SEED_PFAD):
         return
