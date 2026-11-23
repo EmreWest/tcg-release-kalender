@@ -762,10 +762,11 @@ def test_cardmarket_zuordnung_und_preise(client, monkeypatch):
     preise.aktualisieren()
     k = {x["name"]: x.get("cardmarket") for x in client.get(f"/api/karten/{rid}").json()["karten"]}
     assert k["Ruffy"]["trend"] == 1.5 and k["Ruffy"]["url"].endswith("/de/OnePiece/Products?idProduct=1")
-    assert k["Zorro"]["von"] == 0.2 and k["Zorro"]["bis"] == 40.0 and "Search?searchString=Zorro" in k["Zorro"]["url"]
+    assert k["Zorro"]["von"] == 0.2 and k["Zorro"]["bis"] == 40.0 and "/Products/Singles?idExpansion=9&searchString=Zorro" in k["Zorro"]["url"]
     assert k["Zorro (Parallel)"]["versionen"] == 2
     assert k["Nami (SP)"]["trend"] == 12.0  # einzige Version in dieser Erweiterung = die SP-Version
-    assert "trend" not in k["Unbekannt"] and "Search" in k["Unbekannt"]["url"]
+    assert "trend" not in k["Unbekannt"] and "/Products/Singles?searchString=Unbekannt" in k["Unbekannt"]["url"]
+    assert "/Products/Search" not in json.dumps(k)  # die allgemeine Suche verlangt eine Anmeldung
     # Ausschalten blendet die Preise aus
     client.put("/api/admin/einstellungen", json={"cardmarket_preise": False}, auth=ADMIN, headers=H)
     assert all("cardmarket" not in x for x in client.get(f"/api/karten/{rid}").json()["karten"])

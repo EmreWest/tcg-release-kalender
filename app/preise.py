@@ -111,14 +111,17 @@ def _schluessel_cm(spiel: str, name: str) -> str | None:
     return _norm(_ohne_klammern(name))
 
 
-def cm_url(spiel: str, produkt: int | None = None, suche: str | None = None) -> str | None:
+def cm_url(spiel: str, produkt: int | None = None, suche: str | None = None, erweiterung: int | None = None) -> str | None:
+    """Link zu Cardmarket. Die allgemeine Suche (Products/Search) verlangt eine Anmeldung, die gefilterte
+    Liste der Einzelkarten (Products/Singles) nicht – deshalb wird bei mehreren Versionen dorthin verlinkt."""
     if spiel not in SPIELE:
         return None
     pfad = SPIELE[spiel][1]
     if produkt:
         return f"https://www.cardmarket.com/de/{pfad}/Products?idProduct={produkt}"
     if suche:
-        return f"https://www.cardmarket.com/de/{pfad}/Products/Search?searchString={quote(suche)}"
+        filter_exp = f"idExpansion={erweiterung}&" if erweiterung else ""
+        return f"https://www.cardmarket.com/de/{pfad}/Products/Singles?{filter_exp}searchString={quote(suche)}"
     return None
 
 
@@ -337,17 +340,28 @@ def fuer_release(spiel: str, karten_rows: list[dict]) -> list[dict | None]:
         for x in (k.get("cm_kandidaten") or "").split(","):
             if x:
                 ids.add(int(x))
-    preise = {}
+    preise, namen = {}, {}
     if ids:
         with db.verbindung() as con:
             liste = sorted(ids)
             for start in range(0, len(liste), 900):
                 teil = liste[start:start + 900]
-                for r in con.execute(f"SELECT * FROM cm_preise WHERE id IN ({','.join('?' * len(teil))})", teil):
+                platz = ",".join("?" * len(teil))
+                for r in con.execute(f"SELECT * FROM cm_preise WHERE id IN ({platz})", teil):
                     preise[r["id"]] = dict(r)
+                for r in con.execute(f"SELECT id, name, expansion FROM cm_produkte WHERE id IN ({platz})", teil):
+                    namen[r["id"]] = (r["name"], r["expansion"])
     ergebnis = []
+    versiegelt = bool(karten_rows) and "nummer" not in karten_rows[0]
     for k in karten_rows:
         such = _ohne_klammern(k.get("name") or "")
+        kandidaten = [int(x) for x in (k.get("cm_kandidaten") or "").split(",") if x]
+        if kandidaten and kandidaten[0] in namen:
+            # Suche mit dem Cardmarket-Namen (bei Pokémon englisch) in der passenden Erweiterung
+            cm_name, erweiterung = namen[kandidaten[0]]
+            cm_name = re.sub(r"\s*\[[^\]]*\]", "", cm_name).strip()
+        else:
+            cm_name, erweiterung = such, None
         if k.get("cm_id"):
             p = preise.get(k["cm_id"]) or {}
             e = {"url": cm_url(spiel, k["cm_id"])}
@@ -358,12 +372,15 @@ def fuer_release(spiel: str, karten_rows: list[dict]) -> list[dict | None]:
         elif k.get("cm_kandidaten"):
             werte = [preise[int(x)]["trend"] for x in k["cm_kandidaten"].split(",")
                      if int(x) in preise and preise[int(x)].get("trend")]
-            e = {"url": cm_url(spiel, suche=such), "versionen": len(k["cm_kandidaten"].split(","))}
+            e = {"url": cm_url(spiel, suche=cm_name, erweiterung=erweiterung), "versionen": len(kandidaten)}
             if werte:
                 e["von"], e["bis"] = round(min(werte), 2), round(max(werte), 2)
             ergebnis.append(e)
+        elif such and not versiegelt and spiel != "pokemon":
+            # Ohne Zuordnung: Suche nach dem Namen (nicht bei Pokémon, dort sind unsere Namen deutsch)
+            ergebnis.append({"url": cm_url(spiel, suche=such)})
         else:
-            ergebnis.append({"url": cm_url(spiel, suche=such)} if such else None)
+            ergebnis.append(None)
     return ergebnis
 
 

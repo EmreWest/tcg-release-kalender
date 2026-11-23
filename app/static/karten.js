@@ -175,7 +175,7 @@ function grossansicht(pos) {
         <h2 id="karte-titel">${esc(k.name)}</h2>
         <table class="detail-tabelle">${zeilen.map(([a, b]) => `<tr><th>${a}</th><td>${b}</td></tr>`).join("")}</table>
         ${c && c.url ? `<a class="knopf primaer cm-knopf" href="${esc(c.url)}" target="_blank" rel="noopener noreferrer">
-          ${c.von !== undefined || (!c.trend && !c.avg30 && !c.low) ? "Bei Cardmarket suchen" : "Bei Cardmarket ansehen"}
+          ${c.versionen ? "Alle Versionen bei Cardmarket" : (!c.trend && !c.avg30 && !c.low ? "Bei Cardmarket suchen" : "Bei Cardmarket ansehen")}
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>` : ""}
         <div class="karte-nav">
           <button type="button" class="knopf" data-schritt="-1" ${pos === 0 ? "disabled" : ""} aria-label="Vorherige Karte">
