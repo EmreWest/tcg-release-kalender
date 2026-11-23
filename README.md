@@ -9,7 +9,7 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 - Liste, Monats- und Wochenansicht. Jedes Spiel hat eine eigene Farbe, ein Klick auf einen Termin zeigt alle Details.
 - Die Leiste mit den Ansichten bleibt beim Scrollen oben stehen; „Heute“ (oder Taste T) springt in jeder Ansicht zum heutigen Datum.
 - Archiv mit allen vergangenen Releases, nach Jahr und Monat gruppiert und mit denselben Filtern durchsuchbar. Beim ersten Start werden einmalig die bisherigen Sets aller Spiele abgerufen (rund 1.900 Einträge seit 1993) und bleiben dauerhaft gespeichert.
-- Set-Symbole und Logos (Magic, Pokémon, Yu-Gi-Oh!, Flesh and Blood) in Liste, Archiv, Detailansicht und Kartenlisten – einmal geladen und lokal gespeichert.
+- Set-Symbole und Logos (automatisch für Magic, Pokémon, Yu-Gi-Oh!, Flesh and Blood, für alle Spiele auch eigene hochladbar) in Liste, Archiv, Detailansicht und Kartenlisten – einmal geladen und lokal gespeichert.
 - Deutscher und englischer Set-Name: Ist ein deutscher Name hinterlegt, steht er als Titel, der englische darunter; die Suche findet beide.
 - Optional Kartenlisten mit Bildern je Set, mit Cardmarket-Preistrend und -Link je Karte (nur angemeldet sichtbar) und den versiegelten Produkten des Sets (Display, Booster, Bundle …), pro Spiel in der Verwaltung freischaltbar, mit eigener Übersicht aller Sets (`/karten`). Daten und Bilder werden einmal abgerufen und lokal gespeichert.
 - Eigene Logos je Spiel: In der Verwaltung hochladen, sie erscheinen in den Filtern, an den Terminen und in der Detailansicht.
@@ -357,6 +357,8 @@ Standardmäßig an (abschaltbar unter Verwaltung → Darstellung). Kurz nach dem
 | Flesh and Blood | Set-Logo, wo vorhanden | The FaB Cube |
 
 Fehlt bei Pokémon das deutsche Logo oder Kartenbild, wird das englische verwendet. Für die übrigen Spiele liefern die Quellen keine Symbole.
+
+Eigene Bilder: Unter Verwaltung → Termine → Bearbeiten lassen sich für jeden Termin ein Set-Logo und ein Set-Symbol hochladen (PNG, WebP, JPEG oder SVG, höchstens 1 MB; Rasterbilder werden verkleinert und als WebP gespeichert, SVGs mit Skripten abgelehnt). Eigene Bilder haben Vorrang vor den automatisch gefundenen und werden beim täglichen Abgleich nicht überschrieben; nach dem Entfernen gilt wieder das automatische Bild. So lassen sich auch Spiele ohne Symbol-Quelle (One Piece, Lorcana …) ausstatten.
 
 Im selben täglichen Lauf werden deutsche Set-Namen ergänzt, wo ein Termin noch keinen hat: Pokémon aus TCGdex, Magic aus MTGJSON (dort gepflegt bis etwa 2023, zusätzlich nötig: `mtgjson.com`). Für alle anderen Spiele trägst du den deutschen Namen in der Verwaltung beim Termin ein; die Claude-Recherche schlägt ihn ebenfalls vor. Eingetragene Namen werden nie überschrieben. Die Dateien liegen unter `data/setbilder` (insgesamt nur wenige MB), werden nur einmal geladen und ausschließlich von deinem Server ausgeliefert. Symbole stehen vor dem Set-Namen, Logos rechts im Eintrag, in der Detailansicht und auf den Kartenseiten. Zusätzlich nötig ist ausgehender Zugriff auf `svgs.scryfall.io` und `dhhim4ltzu1pj.cloudfront.net`.
 

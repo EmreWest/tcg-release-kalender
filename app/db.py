@@ -141,6 +141,11 @@ CREATE TABLE IF NOT EXISTS setbilder (
     logo_datei TEXT,
     geprueft TEXT
 );
+CREATE TABLE IF NOT EXISTS setbilder_manuell (
+    release_id INTEGER PRIMARY KEY,
+    symbol_datei TEXT,
+    logo_datei TEXT
+);
 CREATE TABLE IF NOT EXISTS cm_produkte (
     id INTEGER PRIMARY KEY,
     spiel TEXT NOT NULL,

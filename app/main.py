@@ -433,6 +433,39 @@ def kartenlisten_seite():
     return _seite("kartenlisten.html", status_code=200 if karten.freigeschaltet() else 404)
 
 
+@app.get("/api/admin/setbild/{rid}")
+def admin_setbild(rid: int, _=Depends(admin)):
+    if not db.release(rid):
+        raise HTTPException(404, "Nicht gefunden")
+    return setbilder.fuer_release(rid)
+
+
+@app.put("/api/admin/setbild/{rid}/{art}")
+async def admin_setbild_hochladen(rid: int, art: str, request: Request, _=Depends(admin)):
+    if art not in setbilder.ARTEN:
+        raise HTTPException(404, "Nicht gefunden")
+    if int(request.headers.get("content-length") or 0) > logos.MAX_GROESSE:
+        raise HTTPException(413, "Die Datei ist größer als 1 MB")
+    inhalt = await request.body()
+    try:
+        setbilder.manuell_speichern(rid, art, inhalt, request.headers.get("content-type", ""))
+    except KeyError:
+        raise HTTPException(404, "Nicht gefunden")
+    except (ValueError, OSError) as e:
+        _fehler(e)
+    except Exception:  # noqa: BLE001  – z. B. beschädigte Bilddatei
+        raise HTTPException(400, "Die Datei ließ sich nicht als Bild lesen")
+    return setbilder.fuer_release(rid)
+
+
+@app.delete("/api/admin/setbild/{rid}/{art}")
+def admin_setbild_entfernen(rid: int, art: str, _=Depends(admin)):
+    if art not in setbilder.ARTEN:
+        raise HTTPException(404, "Nicht gefunden")
+    setbilder.manuell_entfernen(rid, art)
+    return setbilder.fuer_release(rid)
+
+
 @app.get("/setbild/{datei}", include_in_schema=False)
 def set_bild(datei: str):
     pfad = setbilder.pfad(datei) if setbilder.aktiv() else None

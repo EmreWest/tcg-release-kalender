@@ -972,3 +972,58 @@ def test_alle_listen_neu_setzt_nach_neustart_fort(client, monkeypatch):
     assert "neu_seit" not in karten.stand()["magic"] and karten.stand()["magic"]["abgeschlossen"]
     karten._abrufen("magic")
     assert abrufe.count("alt") == 2
+
+
+def test_eigene_set_logos(client, monkeypatch):
+    from app import karten, setbilder
+    rid = db.anlegen({"spiel": "pokemon", "name": "Delta Reign", "datum": "2026-11-06"})
+    url = f"/api/admin/setbild/{rid}/logo"
+    png = _png()
+    # Nur angemeldet und nur mit dem Schutz-Header
+    assert client.put(url, content=png, headers={**H, "Content-Type": "image/png"}).status_code == 401
+    assert client.put(url, content=png, auth=ADMIN, headers={"Content-Type": "image/png"}).status_code == 403
+    # Falscher Typ, Skript im SVG, zu groß, unbekannte Art, unbekannter Termin
+    assert client.put(url, content=b"kein bild", auth=ADMIN, headers={**H, "Content-Type": "image/png"}).status_code == 400
+    assert client.put(url, content=b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>',
+                      auth=ADMIN, headers={**H, "Content-Type": "image/svg+xml"}).status_code == 400
+    assert client.put(url, content=b"x" * (1024 * 1024 + 1), auth=ADMIN, headers={**H, "Content-Type": "image/png"}).status_code == 413
+    assert client.put(f"/api/admin/setbild/{rid}/banner", content=png, auth=ADMIN, headers={**H, "Content-Type": "image/png"}).status_code == 404
+    assert client.put("/api/admin/setbild/999999/logo", content=png, auth=ADMIN, headers={**H, "Content-Type": "image/png"}).status_code == 404
+
+    d = client.put(url, content=png, auth=ADMIN, headers={**H, "Content-Type": "image/png"}).json()
+    assert d["logo"]["eigenes"].startswith("/setbild/") and d["logo"]["automatisch"] is None
+    r = client.get(f"/api/releases/{rid}").json()
+    assert r["logo"] == d["logo"]["eigenes"]
+    assert client.get(r["logo"]).headers["content-type"] == "image/webp"
+
+    # Der automatische Abgleich überschreibt das eigene Logo nicht und löscht die Datei nicht
+    monkeypatch.setattr(setbilder, "_verknuepfen", lambda: None)
+    for quelle in ("_scryfall", "_ygoprodeck", "_fabcube"):
+        monkeypatch.setattr(setbilder, quelle, lambda: {})
+    monkeypatch.setattr(setbilder, "_deutsche_namen_magic", lambda: None)
+    monkeypatch.setattr(setbilder, "_deutsche_namen_pokemon", lambda: None)
+    with db.verbindung() as con:
+        con.execute("INSERT INTO quellen_stand (extern_id, release_id, datum, name, gesehen) VALUES ('tcgdex:me06', ?, '2026-11-06', 'Delta Reign', 'x')", (rid,))
+    monkeypatch.setattr(setbilder, "_tcgdex", lambda v, b: {"tcgdex:me06": {"logo": ["https://assets.tcgdex.net/en/me/me06/logo.png"]}})
+    monkeypatch.setattr(karten, "_herunterladen", lambda u: _png((10, 200, 10)))
+    setbilder.abgleichen()
+    d = client.get(f"/api/admin/setbild/{rid}", auth=ADMIN).json()
+    assert d["logo"]["eigenes"] and d["logo"]["automatisch"] and d["logo"]["eigenes"] != d["logo"]["automatisch"]
+    assert client.get(f"/api/releases/{rid}").json()["logo"] == d["logo"]["eigenes"]
+    assert client.get(d["logo"]["eigenes"]).status_code == 200
+
+    # Entfernen: wieder das automatische Logo, die eigene Datei verschwindet
+    eigen = d["logo"]["eigenes"]
+    d = client.delete(url, auth=ADMIN, headers=H).json()
+    assert d["logo"]["eigenes"] is None
+    assert client.get(f"/api/releases/{rid}").json()["logo"] == d["logo"]["automatisch"]
+    assert client.get(eigen).status_code == 404
+
+    # Symbol als SVG bleibt SVG
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0h10v10z"/></svg>'
+    d = client.put(f"/api/admin/setbild/{rid}/symbol", content=svg, auth=ADMIN, headers={**H, "Content-Type": "image/svg+xml"}).json()
+    assert d["symbol"]["eigenes"].endswith(".svg")
+    # Termin gelöscht: eigene Bilder werden mit aufgeräumt
+    client.delete(f"/api/admin/releases/{rid}", auth=ADMIN, headers=H)
+    setbilder._aufraeumen()
+    assert client.get(d["symbol"]["eigenes"]).status_code == 404

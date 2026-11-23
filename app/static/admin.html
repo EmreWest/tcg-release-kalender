@@ -225,6 +225,11 @@
       <label class="breit">Quelle (URL)<input name="quelle" type="url" placeholder="https://"></label>
     </div>
     <p class="hinweis">Bei Monat oder Quartal den ersten Tag des Zeitraums als Datum wählen. Ändert sich das Datum eines bestätigten Termins, wird er automatisch als „Verschoben“ markiert – außer du setzt den Status selbst.</p>
+    <div id="dlg-setbilder" class="setbild-bereich" hidden>
+      <h3>Set-Logo und Set-Symbol</h3>
+      <p class="hinweis">Eigene Bilder ersetzen die automatisch gefundenen und werden beim täglichen Abgleich nicht überschrieben. PNG, WebP, JPEG oder SVG, höchstens 1 MB; das Speichern geschieht sofort.</p>
+      <div id="dlg-setbilder-inhalt"></div>
+    </div>
     <div class="zeile zwischen" style="margin-top:14px">
       <button class="knopf" value="abbrechen" formnovalidate>Abbrechen</button>
       <button class="knopf primaer" value="ok">Speichern</button>
@@ -346,7 +351,7 @@ function renderTermine() {
     oeffneDialog("Termin bearbeiten", r, async daten => {
       await api(`/api/admin/releases/${r.id}`, { method: "PUT", body: JSON.stringify(daten) });
       toast("Gespeichert"); ladeTermine();
-    });
+    }, r.id);
   });
   document.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
     const r = TERMINE.find(x => x.id == b.dataset.del);
@@ -433,12 +438,51 @@ document.getElementById("sp-los").onclick = async () => {
 };
 
 // --- Dialog ------------------------------------------------------------------
-function oeffneDialog(titel, werte, speichern) {
+function oeffneDialog(titel, werte, speichern, releaseId = null) {
   const f = document.getElementById("dlg-form");
   document.getElementById("dlg-titel").textContent = titel;
   FELDER.forEach(k => { if (werte[k] !== undefined) f.elements[k].value = werte[k] ?? ""; else if (k !== "spiel") f.elements[k].value = ""; });
   dlgAktion = speichern;
+  const bereich = document.getElementById("dlg-setbilder");
+  bereich.hidden = !releaseId;
+  bereich.dataset.r = releaseId || "";
+  document.getElementById("dlg-setbilder-inhalt").innerHTML = "";
+  if (releaseId) setbilderLaden(releaseId);
   document.getElementById("dlg").showModal();
+}
+
+// --- Eigene Set-Logos und -Symbole ------------------------------------------------
+const SETBILD_NAMEN = { logo: "Logo", symbol: "Symbol" };
+async function setbilderLaden(rid, daten) {
+  const ziel = document.getElementById("dlg-setbilder-inhalt");
+  try { daten = daten || await api(`/api/admin/setbild/${rid}`); }
+  catch (e) { ziel.innerHTML = `<p class="hinweis">${esc(e.message)}</p>`; return; }
+  if (document.getElementById("dlg-setbilder").dataset.r !== String(rid)) return;
+  ziel.innerHTML = (daten.aktiv ? "" : `<p class="hinweis">Set-Symbole und Logos sind unter Darstellung ausgeschaltet und werden derzeit nicht angezeigt.</p>`)
+    + ["logo", "symbol"].map(art => {
+      const b = daten[art], aktuell = b.eigenes || b.automatisch;
+      return `<div class="zeile setbild-zeile" data-art="${art}">
+        <span class="setbild-name">${SETBILD_NAMEN[art]}</span>
+        <div class="spiel-logo-vorschau ${art === "logo" ? "gross" : ""}">${aktuell ? `<img src="${esc(aktuell)}" alt="">` : "keins"}</div>
+        <span class="hinweis" style="margin:0">${b.eigenes ? "eigenes" : (b.automatisch ? "automatisch" : "")}</span>
+        <label class="knopf" style="cursor:pointer">${b.eigenes ? "Ersetzen" : "Hochladen"}<input type="file" data-setbild accept="image/png,image/webp,image/jpeg,image/svg+xml" hidden></label>
+        ${b.eigenes ? `<button type="button" class="knopf gefahr" data-setbild-weg>${b.automatisch ? "Eigenes entfernen" : "Entfernen"}</button>` : ""}
+      </div>`;
+    }).join("");
+  ziel.querySelectorAll("[data-setbild]").forEach(inp => inp.onchange = async () => {
+    const datei = inp.files[0]; if (!datei) return;
+    const art = inp.closest("[data-art]").dataset.art;
+    if (datei.size > 1024 * 1024) { toast("Die Datei ist größer als 1 MB"); return; }
+    try {
+      const neu = await api(`/api/admin/setbild/${rid}/${art}`, { method: "PUT", body: datei, headers: { "Content-Type": datei.type || "application/octet-stream" } });
+      toast(`${SETBILD_NAMEN[art]} gespeichert`); setbilderLaden(rid, neu);
+    } catch (e) { toast(e.message); }
+  });
+  ziel.querySelectorAll("[data-setbild-weg]").forEach(b => b.onclick = async () => {
+    const art = b.closest("[data-art]").dataset.art;
+    try { const neu = await api(`/api/admin/setbild/${rid}/${art}`, { method: "DELETE" }); toast(`${SETBILD_NAMEN[art]} entfernt`); setbilderLaden(rid, neu); }
+    catch (e) { toast(e.message); }
+  });
 }
 document.getElementById("dlg").addEventListener("close", async () => {
   const dlg = document.getElementById("dlg");

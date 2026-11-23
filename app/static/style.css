@@ -699,3 +699,9 @@ a.produkt:hover { border-color: var(--rand-stark); }
 .produkt-raster.kompakt .produkt { grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding: 8px 10px; box-shadow: none; }
 .produkt-raster.kompakt .produkt-bild { height: 64px; }
 .produkt-raster.kompakt .produkt-name { font-size: 13px; }
+
+/* Eigene Set-Logos im Termin-Dialog der Verwaltung */
+.setbild-bereich { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--rand); }
+.setbild-bereich h3 { margin: 0 0 4px; font-size: 15px; }
+.setbild-zeile { gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.setbild-name { width: 56px; font-size: 14px; font-weight: 600; }

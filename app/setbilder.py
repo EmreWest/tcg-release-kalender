@@ -110,7 +110,13 @@ def _tcgdex(verknuepft: set[str], bekannt: dict) -> dict:
 
 def _speichern(url: str, art: str) -> str:
     inhalt = karten._herunterladen(url)
-    if url.split("?")[0].lower().endswith(".svg") or inhalt.lstrip()[:5] in (b"<svg ", b"<?xml"):
+    svg = url.split("?")[0].lower().endswith(".svg") or inhalt.lstrip()[:5] in (b"<svg ", b"<?xml")
+    return _ablegen(inhalt, art, url, svg)
+
+
+def _ablegen(inhalt: bytes, art: str, schluessel: str, svg: bool) -> str:
+    """SVG geprüft unverändert, alles andere verkleinert als WebP speichern."""
+    if svg:
         if b"<svg" not in inhalt[:4096] or logos._SVG_VERBOTEN.search(inhalt):
             raise ValueError("SVG abgelehnt")
         endung, daten = "svg", inhalt
@@ -118,6 +124,8 @@ def _speichern(url: str, art: str) -> str:
         with Image.open(io.BytesIO(inhalt)) as bild:
             if bild.format not in ("JPEG", "PNG", "WEBP", "GIF"):
                 raise ValueError(f"Unbekanntes Bildformat: {bild.format}")
+            if bild.width * bild.height > 40_000_000:
+                raise ValueError("Das Bild ist zu groß (mehr als 40 Megapixel)")
             bild.load()
             bild = bild.convert("RGBA")
             groesse = (SYMBOL_HOEHE * 4, SYMBOL_HOEHE) if art == "symbol" else (LOGO_BREITE, LOGO_HOEHE)
@@ -125,7 +133,7 @@ def _speichern(url: str, art: str) -> str:
             aus = io.BytesIO()
             bild.save(aus, "WEBP", quality=85, method=4)
             endung, daten = "webp", aus.getvalue()
-    datei = hashlib.sha1(url.encode()).hexdigest()[:24] + "." + endung
+    datei = hashlib.sha1(schluessel.encode()).hexdigest()[:24] + "." + endung
     os.makedirs(verzeichnis(), exist_ok=True)
     ziel = os.path.join(verzeichnis(), datei)
     with open(ziel + ".tmp", "wb") as f:
@@ -270,7 +278,10 @@ def abgleichen() -> str:
 def _aufraeumen():
     with db.verbindung() as con:
         con.execute("DELETE FROM setbilder WHERE release_id NOT IN (SELECT id FROM releases)")
-        genutzt = {r[0] for r in con.execute("SELECT symbol_datei FROM setbilder UNION SELECT logo_datei FROM setbilder") if r[0]}
+        con.execute("DELETE FROM setbilder_manuell WHERE release_id NOT IN (SELECT id FROM releases)")
+        genutzt = {r[0] for r in con.execute(
+            "SELECT symbol_datei FROM setbilder UNION SELECT logo_datei FROM setbilder "
+            "UNION SELECT symbol_datei FROM setbilder_manuell UNION SELECT logo_datei FROM setbilder_manuell") if r[0]}
     try:
         for datei in os.listdir(verzeichnis()):
             if _DATEINAME.match(datei) and datei not in genutzt:
@@ -296,12 +307,13 @@ def info() -> dict:
 
 
 def zuordnung() -> dict[int, dict]:
-    """Symbol und Logo je Termin (Adressen auf dem eigenen Server)."""
+    """Symbol und Logo je Termin (Adressen auf dem eigenen Server). Eigene Uploads haben Vorrang."""
     if not aktiv():
         return {}
     with db.verbindung() as con:
         rows = con.execute("SELECT release_id, symbol_datei, symbol_mono, logo_datei FROM setbilder "
                            "WHERE symbol_datei IS NOT NULL OR logo_datei IS NOT NULL").fetchall()
+        manuell = con.execute("SELECT release_id, symbol_datei, logo_datei FROM setbilder_manuell").fetchall()
     ergebnis = {}
     for r in rows:
         e = {}
@@ -312,7 +324,54 @@ def zuordnung() -> dict[int, dict]:
         if r["logo_datei"]:
             e["logo"] = f"/setbild/{r['logo_datei']}"
         ergebnis[r["release_id"]] = e
-    return ergebnis
+    for m in manuell:
+        e = ergebnis.setdefault(m["release_id"], {})
+        if m["symbol_datei"]:
+            e["symbol"] = f"/setbild/{m['symbol_datei']}"
+            e.pop("symbol_mono", None)
+        if m["logo_datei"]:
+            e["logo"] = f"/setbild/{m['logo_datei']}"
+    return {rid: e for rid, e in ergebnis.items() if e}
+
+
+# --- Eigene Uploads ------------------------------------------------------------------
+
+ARTEN = ("logo", "symbol")
+
+
+def manuell_speichern(rid: int, art: str, inhalt: bytes, medientyp: str) -> str:
+    if art not in ARTEN:
+        raise ValueError("Unbekannte Art")
+    if not db.release(rid):
+        raise KeyError(rid)
+    endung = logos._typ_pruefen(inhalt, medientyp)  # Typ, Größe (1 MB) und SVG-Inhalt prüfen
+    datei = _ablegen(inhalt, art, f"manuell|{rid}|{art}|{hashlib.sha256(inhalt).hexdigest()}", endung == "svg")
+    with db.verbindung() as con:
+        alt = con.execute(f"SELECT {art}_datei FROM setbilder_manuell WHERE release_id = ?", (rid,)).fetchone()
+        con.execute(f"INSERT INTO setbilder_manuell (release_id, {art}_datei) VALUES (?, ?) "
+                    f"ON CONFLICT(release_id) DO UPDATE SET {art}_datei = excluded.{art}_datei", (rid, datei))
+    if alt and alt[0] and alt[0] != datei:
+        _aufraeumen()
+    return datei
+
+
+def manuell_entfernen(rid: int, art: str):
+    if art not in ARTEN:
+        raise ValueError("Unbekannte Art")
+    with db.verbindung() as con:
+        con.execute(f"UPDATE setbilder_manuell SET {art}_datei = NULL WHERE release_id = ?", (rid,))
+        con.execute("DELETE FROM setbilder_manuell WHERE symbol_datei IS NULL AND logo_datei IS NULL")
+    _aufraeumen()
+
+
+def fuer_release(rid: int) -> dict:
+    """Für die Verwaltung: automatisch gefundene und eigene Bilder eines Termins."""
+    with db.verbindung() as con:
+        a = con.execute("SELECT symbol_datei, logo_datei FROM setbilder WHERE release_id = ?", (rid,)).fetchone()
+        m = con.execute("SELECT symbol_datei, logo_datei FROM setbilder_manuell WHERE release_id = ?", (rid,)).fetchone()
+    url = lambda d: f"/setbild/{d}" if d and pfad(d) else None  # noqa: E731
+    return {art: {"automatisch": url(a[f"{art}_datei"]) if a else None, "eigenes": url(m[f"{art}_datei"]) if m else None}
+            for art in ARTEN} | {"aktiv": aktiv()}
 
 
 def starte_hintergrund():
