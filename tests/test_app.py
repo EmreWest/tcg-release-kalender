@@ -1071,3 +1071,25 @@ def test_offizielle_herstellerseiten(client, monkeypatch):
         {"aktion": "aenderung", "release_id": rid, "daten": {"offiziell": "https://www.pokemon.com/de/pokemon-sammelkartenspiel/x"}},
     ], "claude-test")
     assert angelegt == 1 and len(fehler) == 1
+
+
+def test_herstellerseite_per_set_code(monkeypatch):
+    from app import hersteller
+    seiten = {"https://en.onepiece-cardgame.com/products/op18.html":
+              ("https://en.onepiece-cardgame.com/products/op18.html", "<title>BOOSTER PACK -THE DOMINANCE OF GOD- [OP-18] | ONE PIECE</title>"),
+              "https://en.onepiece-cardgame.com/products/op17.html":
+              ("https://en.onepiece-cardgame.com/", "<title>ONE PIECE CARD GAME</title>"),  # Weiterleitung auf die Startseite
+              "https://en.onepiece-cardgame.com/products/eb05.html":
+              ("https://en.onepiece-cardgame.com/products/eb05.html", "<title>Etwas anderes</title>")}
+
+    def laden(url, versuche=3):
+        if url not in seiten:
+            raise OSError("404")
+        return seiten[url]
+    monkeypatch.setattr(hersteller, "_laden", laden)
+    assert hersteller.per_code("onepiece", {"code": "OP-18"}) == "https://en.onepiece-cardgame.com/products/op18.html"
+    assert hersteller.per_code("onepiece", {"code": "OP17"}) is None   # umgeleitet
+    assert hersteller.per_code("onepiece", {"code": "EB-05"}) is None  # Titel ohne Code
+    assert hersteller.per_code("onepiece", {"code": "../x"}) is None
+    assert hersteller.per_code("onepiece", {"code": None}) is None
+    assert hersteller.per_code("pokemon", {"code": "ME06"}) is None    # kein Code-Schema bekannt

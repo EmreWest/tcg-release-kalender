@@ -350,7 +350,7 @@ Termine wie „30th Celebration Premium (Welle 4)“ bekommen automatisch die Ka
 Unter jedem Termin steht für Besucher ein Link auf die Seite des Herstellers, im Kalender-Abo ebenso. Welche Seite, entscheidet diese Reihenfolge:
 
 1. die in der Verwaltung beim Termin eingetragene „Offizielle Seite“,
-2. eine automatisch gefundene Produktseite: Einmal am Tag lädt der Container die Produktübersichten der Hersteller (pokemon.com, magic.wizards.com, yugioh-card.com, onepiece-cardgame.com, digimoncard.com, dbs-cardgame.com, cf-vanguard.com, ws-tcg.com u. a.) und ordnet Links nur zu, wenn der Set-Name eindeutig passt; das betrifft kommende und bis zu 180 Tage alte Termine,
+2. eine automatisch gefundene Produktseite: Einmal am Tag lädt der Container die Produktübersichten der Hersteller (pokemon.com, magic.wizards.com, yugioh-card.com, onepiece-cardgame.com, digimoncard.com, dbs-cardgame.com, cf-vanguard.com, ws-tcg.com u. a.) und ordnet Links nur zu, wenn der Set-Name eindeutig passt; bei One Piece und Gundam zusätzlich über den Set-Code (OP-18 → `op18.html`), übernommen nur, wenn der Seitentitel den Code enthält. Das betrifft kommende und bis zu 180 Tage alte Termine,
 3. die Quelle des Termins, wenn sie auf einer Seite des Herstellers liegt (z. B. aus der Claude-Recherche, die gezielt nach offiziellen Seiten sucht und nur Adressen auf der Domain des Herstellers vorschlagen darf),
 4. sonst die Produktübersicht des Herstellers („Produkte bei …“).
 

@@ -28,7 +28,8 @@ HERSTELLER = {
     "magic": ("magic.wizards.com", "https://magic.wizards.com/de/products", ("wizards.com",),
               ["https://magic.wizards.com/de/products"], r"^/de/products/"),
     "onepiece": ("onepiece-cardgame.com", "https://en.onepiece-cardgame.com/products/", ("onepiece-cardgame.com",),
-                 ["https://en.onepiece-cardgame.com/products/"], r"/products/"),
+                 ["https://en.onepiece-cardgame.com/products/", "https://en.onepiece-cardgame.com/products/?subcategory=boosters",
+                  "https://en.onepiece-cardgame.com/products/?subcategory=decks"], r"/products/"),
     "lorcana": ("disneylorcana.com", "https://www.disneylorcana.com/de/", ("disneylorcana.com", "ravensburger.de"), [], None),
     "yugioh": ("yugioh-card.com", "https://www.yugioh-card.com/eu/de/products/", ("yugioh-card.com",),
                ["https://www.yugioh-card.com/eu/de/products/"], r"/product/"),
@@ -36,7 +37,7 @@ HERSTELLER = {
     "swu": ("starwarsunlimited.com", "https://starwarsunlimited.com/de/product-guide", ("starwarsunlimited.com",),
             ["https://starwarsunlimited.com/de/product-guide"], r"/products?/"),
     "gundam": ("gundam-gcg.com", "https://www.gundam-gcg.com/en/products/", ("gundam-gcg.com",),
-               ["https://www.gundam-gcg.com/en/products/"], r"/products/"),
+               ["https://www.gundam-gcg.com/en/products/", "https://www.gundam-gcg.com/en/products/list.php"], r"/products/"),
     "digimon": ("digimoncard.com", "https://world.digimoncard.com/products/", ("digimoncard.com",),
                 ["https://world.digimoncard.com/products/"], r"/products/"),
     "dbfw": ("dbs-cardgame.com", "https://www.dbs-cardgame.com/fw/en/products/", ("dbs-cardgame.com",),
@@ -46,7 +47,8 @@ HERSTELLER = {
                    ["https://www.unionarena-tcg.com/na/products/"], r"/products/"),
     "weiss": ("ws-tcg.com", "https://en.ws-tcg.com/products/", ("ws-tcg.com",), ["https://en.ws-tcg.com/products/"], r"/products/"),
     "vanguard": ("cf-vanguard.com", "https://en.cf-vanguard.com/products/", ("cf-vanguard.com",),
-                 ["https://en.cf-vanguard.com/products/"], r"/products/"),
+                 ["https://en.cf-vanguard.com/products/", "https://en.cf-vanguard.com/products/cat/booster/",
+                  "https://en.cf-vanguard.com/products/cat/trial/"], r"/products/"),
     "shadowverse": ("shadowverse-evolve.com", "https://en.shadowverse-evolve.com/products/", ("shadowverse-evolve.com",),
                     ["https://en.shadowverse-evolve.com/products/"], r"/products/"),
     "hololive": ("hololive-official-cardgame.com", "https://en.hololive-official-cardgame.com/products/",
@@ -55,6 +57,14 @@ HERSTELLER = {
     "sorcery": ("sorcerytcg.com", "https://sorcerytcg.com/", ("sorcerytcg.com",), [], None),
     "grandarchive": ("gatcg.com", "https://www.gatcg.com/", ("gatcg.com",), [], None),
     "cyberpunk": ("cyberpunktcg.com", "https://cyberpunktcg.com/", ("cyberpunktcg.com",), [], None),
+}
+
+# Hersteller, deren Produktseiten den Set-Code in der Adresse tragen (OP-18 -> op18.html). Solche Seiten werden
+# nur übernommen, wenn der Seitentitel den Code enthält – so fallen auch erschienene Sets nicht heraus, die
+# nicht mehr in der Übersicht stehen.
+CODE_VORLAGEN = {
+    "onepiece": "https://en.onepiece-cardgame.com/products/{code}.html",
+    "gundam": "https://www.gundam-gcg.com/en/products/{code}.html",
 }
 
 _FUELL = {"the", "of", "and", "a", "der", "die", "das", "und", "von", "set", "tcg", "de", "en", "eu", "na", "fw", "html",
@@ -81,17 +91,38 @@ def _auf_domain(url: str | None, domains) -> bool:
     return p.scheme == "https" and any(host == d or host.endswith("." + d) for d in domains)
 
 
-def _laden(url: str) -> tuple[str, str]:
+def _laden(url: str, versuche: int = 3) -> tuple[str, str]:
     req = urllib.request.Request(url, headers={"User-Agent": _UA, "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8"})
     letzter = None
-    for versuch in range(3):  # manche Seiten lehnen einzelne Abrufe ab und lassen den nächsten durch
+    for versuch in range(versuche):  # manche Seiten lehnen einzelne Abrufe ab und lassen den nächsten durch
         try:
             with urllib.request.urlopen(req, timeout=40) as r:
                 return r.geturl(), r.read(4_000_000).decode("utf-8", "replace")
         except Exception as e:  # noqa: BLE001
             letzter = e
-            time.sleep(3 + versuch * 3)
+            if versuch + 1 < versuche:
+                time.sleep(3 + versuch * 3)
     raise letzter
+
+
+def _code(code: str | None) -> str:
+    return re.sub(r"[^a-z0-9]", "", (code or "").lower())
+
+
+def per_code(spiel: str, r: dict) -> str | None:
+    """Produktseite über den Set-Code finden; nur mit passendem Seitentitel."""
+    vorlage, code = CODE_VORLAGEN.get(spiel), _code(r.get("code"))
+    if not vorlage or not re.fullmatch(r"[a-z]{1,4}\d{1,3}", code or ""):
+        return None
+    url = vorlage.format(code=code)
+    try:
+        ziel, text = _laden(url, versuche=1)
+    except Exception:  # noqa: BLE001  – 404: gibt es (noch) nicht
+        return None
+    titel = re.search(r"<title[^>]*>(.*?)</title>", text, re.S | re.I)
+    if urlparse(ziel).path != urlparse(url).path or not titel or code not in _code(html.unescape(titel.group(1))):
+        return None
+    return url
 
 
 def kandidaten(seite: str, basis: str, domains, muster: str) -> dict[str, dict]:
@@ -165,6 +196,14 @@ def abgleichen() -> str:
                     log.info("Herstellerseite %s nicht abrufbar: %s", s, e)
                 time.sleep(2)
             neu = zuordnen(rels, kand)
+            if spiel in CODE_VORLAGEN:
+                bekannt = set(gefundene())
+                for r in rels:
+                    if r["id"] not in neu and r["id"] not in bekannt and not r.get("offiziell") and r.get("code"):
+                        url = per_code(spiel, r)
+                        if url:
+                            neu[r["id"]] = url
+                        time.sleep(1)
             jetzt = db.jetzt()
             with db.verbindung() as con:
                 # Gefundene Links bleiben, auch wenn das Produkt später von der Übersicht verschwindet
