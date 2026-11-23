@@ -19,7 +19,7 @@ log = logging.getLogger("tcg-kalender.hersteller")
 
 INTERVALL_STUNDEN = 24
 # Bei Änderungen an der Suche erhöhen: Dann läuft der Abgleich nach dem Update sofort statt erst nach 24 Stunden
-SUCHE_VERSION = "2"
+SUCHE_VERSION = "3"
 ZEITRAUM_TAGE = 180  # nur für kommende und kürzlich erschienene Sets suchen
 _UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 
@@ -64,10 +64,19 @@ HERSTELLER = {
 # Hersteller, deren Produktseiten den Set-Code in der Adresse tragen (OP-18 -> op18.html). Solche Seiten werden
 # nur übernommen, wenn der Seitentitel den Code enthält – so fallen auch erschienene Sets nicht heraus, die
 # nicht mehr in der Übersicht stehen.
+# (Adresse, Prüfung): Bei "code" muss der Seitentitel den Set-Code enthalten, bei "name" alle Wörter des Namens.
+# {code} ist der Set-Code ohne Sonderzeichen, {slug} der englische Name in Kleinbuchstaben mit Bindestrichen.
 CODE_VORLAGEN = {
-    "onepiece": "https://en.onepiece-cardgame.com/products/{code}.html",
-    "gundam": "https://www.gundam-gcg.com/en/products/{code}.html",
+    "onepiece": ("https://en.onepiece-cardgame.com/products/{code}.html", "code"),
+    "gundam": ("https://www.gundam-gcg.com/en/products/{code}.html", "code"),
+    "shadowverse": ("https://en.shadowverse-evolve.com/products/{code}/", "name"),
+    "yugioh": ("https://www.yugioh-card.com/eu/de/product/{slug}/", "name"),
 }
+
+# Ableger eines Sets (Commander-Decks, weitere Wellen, Tins, Kollektionen …) bekommen die Seite des Hauptsets,
+# wenn sich ihr Name nur um solche Wörter unterscheidet
+_ABLEGER = {"commander", "welle", "wave", "premium", "collection", "kollektion", "tin", "tins", "binder", "starter",
+            "deck", "decks", "build", "box", "bundle", "display", "ex", "mini", "special", "edition"}
 
 _FUELL = {"the", "of", "and", "a", "der", "die", "das", "und", "von", "set", "tcg", "de", "en", "eu", "na", "fw", "html",
           "php", "www", "com", "products", "product", "produkte", "pokemon", "sammelkartenspiel", "magic", "news"}
@@ -111,20 +120,52 @@ def _code(code: str | None) -> str:
     return re.sub(r"[^a-z0-9]", "", (code or "").lower())
 
 
+def _slug(name: str | None) -> str:
+    return "-".join(re.findall(r"[a-z0-9]+", (name or "").lower().replace("'", "").replace("’", "")))
+
+
 def per_code(spiel: str, r: dict) -> str | None:
-    """Produktseite über den Set-Code finden; nur mit passendem Seitentitel."""
-    vorlage, code = CODE_VORLAGEN.get(spiel), _code(r.get("code"))
-    if not vorlage or not re.fullmatch(r"[a-z]{1,4}\d{1,3}", code or ""):
+    """Produktseite über Set-Code oder Namen finden; nur mit passendem Seitentitel."""
+    if spiel not in CODE_VORLAGEN:
         return None
-    url = vorlage.format(code=code)
+    vorlage, pruefung = CODE_VORLAGEN[spiel]
+    code, slug = _code(r.get("code")), _slug(r.get("name"))
+    if "{code}" in vorlage and not re.fullmatch(r"[a-z]{1,4}\d{1,3}", code or ""):
+        return None
+    if "{slug}" in vorlage and not (2 <= len(slug) <= 80):
+        return None
+    url = vorlage.format(code=code, slug=slug)
     try:
         ziel, text = _laden(url, versuche=1)
     except Exception:  # noqa: BLE001  – 404: gibt es (noch) nicht
         return None
     titel = re.search(r"<title[^>]*>(.*?)</title>", text, re.S | re.I)
-    if urlparse(ziel).path != urlparse(url).path or not titel or code not in _code(html.unescape(titel.group(1))):
+    if urlparse(ziel).path != urlparse(url).path or not titel:
+        return None
+    titel = html.unescape(titel.group(1))
+    if pruefung == "code" and code not in _code(titel):
+        return None
+    if pruefung == "name" and not (_woerter(r.get("name")) and _woerter(r.get("name")) <= _woerter(titel)):
         return None
     return url
+
+
+def ableger(releases: list[dict], links: dict[int, str]) -> dict[int, str]:
+    """Termine ohne Seite, deren Name aus dem Namen eines Sets mit Seite plus Ableger-Wörtern besteht."""
+    basis = [(_woerter(r["name"]), links[r["id"]]) for r in releases if r["id"] in links]
+    ergebnis = {}
+    for r in releases:
+        if r["id"] in links or r.get("offiziell"):
+            continue
+        nw = _woerter(r["name"])
+        passend = [(len(bw), url) for bw, url in basis
+                   if len(bw) >= 1 and bw < nw and all(w in _ABLEGER or w.isdigit() for w in nw - bw)]
+        if passend:
+            groesste = max(p[0] for p in passend)
+            urls = {u for n, u in passend if n == groesste}
+            if len(urls) == 1:
+                ergebnis[r["id"]] = urls.pop()
+    return ergebnis
 
 
 def kandidaten(seite: str, basis: str, domains, muster: str) -> dict[str, dict]:
@@ -184,7 +225,7 @@ def abgleichen() -> str:
         gefunden = fehler = 0
         for spiel, (_, _, domains, seiten, muster) in HERSTELLER.items():
             rels = [r for r in db.releases(spiele_filter=[spiel], von=von)]
-            if not seiten or not rels:
+            if not rels or not (seiten or spiel in CODE_VORLAGEN):
                 continue
             kand: dict[str, dict] = {}
             for s in seiten:
@@ -206,6 +247,7 @@ def abgleichen() -> str:
                         if url:
                             neu[r["id"]] = url
                         time.sleep(1)
+            neu.update(ableger(rels, {**gefundene_spiel(spiel), **neu}))
             jetzt = db.jetzt()
             with db.verbindung() as con:
                 # Gefundene Links bleiben, auch wenn das Produkt später von der Übersicht verschwindet
@@ -225,6 +267,12 @@ def abgleichen() -> str:
     finally:
         status["laeuft"] = False
         _lock.release()
+
+
+def gefundene_spiel(spiel: str) -> dict[int, str]:
+    with db.verbindung() as con:
+        return {r["release_id"]: r["url"] for r in con.execute(
+            "SELECT h.release_id, h.url FROM hersteller_links h JOIN releases r ON r.id = h.release_id WHERE r.spiel = ?", (spiel,))}
 
 
 def gefundene() -> dict[int, str]:

@@ -1093,3 +1093,16 @@ def test_herstellerseite_per_set_code(monkeypatch):
     assert hersteller.per_code("onepiece", {"code": "../x"}) is None
     assert hersteller.per_code("onepiece", {"code": None}) is None
     assert hersteller.per_code("pokemon", {"code": "ME06"}) is None    # kein Code-Schema bekannt
+
+
+def test_herstellerseite_ableger_und_name(monkeypatch):
+    from app import hersteller
+    rels = [{"id": 1, "name": "Star Trek"}, {"id": 2, "name": "Star Trek Commander"},
+            {"id": 3, "name": "30th Celebration"}, {"id": 4, "name": "30th Celebration ex Tins & Binder Collection (Welle 5)"},
+            {"id": 5, "name": "Star Trek: Deep Space Nine"}, {"id": 6, "name": "Umamusume: Pretty Derby"},
+            {"id": 7, "name": "Umamusume: Pretty Derby - Beginning of a New Era"}]
+    z = hersteller.ableger(rels, {1: "https://x/star-trek", 3: "https://x/30-jahre", 6: "https://x/uma"})
+    assert z == {2: "https://x/star-trek", 4: "https://x/30-jahre"}  # andere Zusätze bekommen keine fremde Seite
+    monkeypatch.setattr(hersteller, "_laden", lambda url, versuche=3: (url, "<title>Chaos Origins &#8211; Yu-Gi-Oh!</title>"))
+    assert hersteller.per_code("yugioh", {"name": "Chaos Origins"}) == "https://www.yugioh-card.com/eu/de/product/chaos-origins/"
+    assert hersteller.per_code("yugioh", {"name": "Magnificent Monsters"}) is None  # Titel passt nicht
