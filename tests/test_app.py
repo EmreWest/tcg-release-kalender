@@ -656,10 +656,12 @@ def test_anmeldeseite_und_sitzung(client):
     assert client.get("/api/admin/status").status_code == 200
     assert client.get("/admin").status_code == 200
     assert client.get("/login", follow_redirects=False).status_code == 303
+    assert client.get("/api/sitzung").json() == {"angemeldet": True}
     # Manipulierter Cookie zählt nicht
     client.cookies.clear()
     client.cookies.set(m.SITZUNG_COOKIE, "9999999999.abc")
     assert client.get("/api/admin/status").status_code == 401
+    assert client.get("/api/sitzung").json() == {"angemeldet": False}
     # Merken setzt eine Laufzeit, Abmelden löscht den Cookie
     r = client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1], "merken": True}, headers=H)
     assert "Max-Age=2592000" in r.headers["set-cookie"]
@@ -670,8 +672,20 @@ def test_anmeldeseite_und_sitzung(client):
     client.post("/api/logout", headers=H)
     client.cookies.clear()
     assert client.get("/api/admin/status").status_code == 401
+    # Abmelden macht die Sitzung auch serverseitig ungültig (ein kopierter Cookie hilft nicht mehr)
+    client.cookies.set(m.SITZUNG_COOKIE, token)
+    assert client.get("/api/admin/status").status_code == 401
+    client.cookies.clear()
+    # Nach der Anmeldung zurück zur Ausgangsseite, aber nie auf fremde Seiten
+    r = client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1], "weiter": "/karten/5"}, headers=H)
+    assert r.json()["weiter"] == "/karten/5"
+    for boese in ("https://boese.example", "//boese.example", "/\\boese.example", "javascript:alert(1)", "/login"):
+        assert m._sicheres_ziel(boese) == "/admin"
+    assert client.get("/login?weiter=//boese.example", follow_redirects=False).headers["location"] == "/admin"
+    client.cookies.clear()
     # Passwortwechsel macht bestehende Sitzungen ungültig
-    token = m._token(int(m.time.time()) + 3600)
+    token = m._sitzung_anlegen(3600)
+    assert m._sitzung_gueltig(token)
     m.ADMIN_PASSWORT = "neu"
     try:
         assert not m._sitzung_gueltig(token)
@@ -686,6 +700,37 @@ def test_anmeldung_sperre_nach_fehlversuchen(client, monkeypatch):
     for _ in range(m.FEHLVERSUCHE_MAX):
         assert client.post("/api/login", json={"benutzer": "admin", "passwort": "x"}, headers=H).status_code == 401
     assert client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1]}, headers=H).status_code == 429
+    # Basic Auth unterliegt derselben Sperre
+    assert client.get("/api/admin/status", auth=ADMIN).status_code == 401
+
+
+def test_sperre_nicht_per_x_forwarded_for_umgehbar(client, monkeypatch):
+    from app import main as m
+    monkeypatch.setattr(m.time, "sleep", lambda s: None)
+    monkeypatch.setattr(m, "_FEHLVERSUCHE", {})
+    # Ein selbst gesetzter vorderer Eintrag ändert nichts: gezählt wird der vom Proxy angehängte letzte
+    for i in range(m.FEHLVERSUCHE_MAX):
+        xff = {"X-Forwarded-For": f"10.0.0.{i}, 203.0.113.7"}
+        assert client.post("/api/login", json={"benutzer": "admin", "passwort": "x"}, headers={**H, **xff}).status_code == 401
+    xff = {"X-Forwarded-For": "10.9.9.9, 203.0.113.7"}
+    assert client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1]}, headers={**H, **xff}).status_code == 429
+    # Basic-Auth-Fehlversuche zählen ebenfalls
+    monkeypatch.setattr(m, "_FEHLVERSUCHE", {})
+    for _ in range(m.FEHLVERSUCHE_MAX):
+        assert client.get("/api/admin/status", auth=("admin", "x"), headers={"X-Forwarded-For": "198.51.100.1"}).status_code == 401
+    assert client.get("/api/admin/status", auth=ADMIN, headers={"X-Forwarded-For": "198.51.100.1"}).status_code == 401
+    # Viele Adressen zusammen: Obergrenze greift für alle
+    monkeypatch.setattr(m, "_FEHLVERSUCHE", {})
+    for i in range(m.FEHLVERSUCHE_GESAMT_MAX):
+        client.post("/api/login", json={"benutzer": "admin", "passwort": "x"}, headers={**H, "X-Forwarded-For": f"192.0.2.{i}"})
+    assert client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1]},
+                       headers={**H, "X-Forwarded-For": "192.0.2.250"}).status_code == 429
+
+
+def test_anmelden_link_und_verwaltung(client):
+    seite = client.get("/").text
+    assert 'data-login' in seite and '/static/sitzung.js' in seite
+    assert 'href="/admin"' not in seite  # der Verwaltungs-Link kommt erst nach der Anmeldung (per Skript)
 
 
 
@@ -760,7 +805,11 @@ def test_cardmarket_zuordnung_und_preise(client, monkeypatch):
     monkeypatch.setattr(preise, "_laden", lambda url: {"products": produkte if "singles_" in url and "nonsingles" not in url else []}
                         if "productList" in url else {"priceGuides": preisliste})
     preise.aktualisieren()
-    k = {x["name"]: x.get("cardmarket") for x in client.get(f"/api/karten/{rid}").json()["karten"]}
+    # Öffentlich: keine Preise, keine Links, nicht zwischenspeicherbar
+    oeffentlich = client.get(f"/api/karten/{rid}")
+    assert "cardmarket" not in oeffentlich.text and oeffentlich.json()["preise_stand"] is None
+    assert "no-store" in oeffentlich.headers["cache-control"] and "private" in oeffentlich.headers["cache-control"]
+    k = {x["name"]: x.get("cardmarket") for x in client.get(f"/api/karten/{rid}", auth=ADMIN).json()["karten"]}
     assert k["Ruffy"]["trend"] == 1.5 and k["Ruffy"]["url"].endswith("/de/OnePiece/Products?idProduct=1")
     # Zwei Versionen: die normale Karte bekommt die günstige, die Parallel-Version die teure
     assert k["Zorro"]["trend"] == 0.2 and k["Zorro"]["geschaetzt"] and k["Zorro"]["url"].endswith("idProduct=2")
@@ -811,14 +860,17 @@ def test_versiegelte_produkte(client, monkeypatch):
                                                      else {"priceGuides": [{"idProduct": 11, "trend": 149.9}, {"idProduct": 12, "trend": 19.5}]}))
     preise.aktualisieren()
     assert client.get(f"/api/releases/{rid}").json()["produkte"] == 3
-    d = client.get(f"/api/karten/{rid}").json()
+    oeffentlich = client.get(f"/api/karten/{rid}").json()
+    assert len(oeffentlich["produkte"]) == 3 and not any("cardmarket" in x for x in oeffentlich["produkte"])
+    assert "cardmarket" not in client.get(f"/api/produkte/{rid}").text
+    d = client.get(f"/api/karten/{rid}", auth=ADMIN).json()
     assert d["karten"] == [] and len(d["produkte"]) == 3
     p = {x["name"]: x for x in d["produkte"]}
     assert p["Stürmische Funken Display"]["cardmarket"]["trend"] == 149.9 and p["Stürmische Funken Display"]["bild"]
     assert p["Stürmische Funken 3er-Blister Zapdos"]["cardmarket"]["trend"] == 19.5
     assert p["Stürmische Funken Top-Trainer-Box"]["name_en"] == "Surging Sparks Elite Trainer Box"
     # Dieselben Produkte für die Detailansicht im Kalender
-    assert client.get(f"/api/produkte/{rid}").json()["produkte"] == d["produkte"]
+    assert client.get(f"/api/produkte/{rid}", auth=ADMIN).json()["produkte"] == d["produkte"]
     assert client.get("/api/produkte/999999").status_code == 404
     # Aufräumen lässt Produktbilder stehen
     karten._aufraeumen("pokemon")

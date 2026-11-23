@@ -706,14 +706,15 @@ def anzahlen(eigene_nur: bool = False) -> dict[int, int]:
     return eigene | {rid: eigene[ziel] for rid, ziel in _wellen(aktiv, eigene).items()}
 
 
-def _produkte_ausgabe(spiel: str, produkte: list) -> list[dict]:
+def _produkte_ausgabe(spiel: str, produkte: list, mit_preisen: bool) -> list[dict]:
     from . import preise
+    preisliste = preise.fuer_release(spiel, produkte) if mit_preisen else [None] * len(produkte)
     return [{"name": p["name_de"] or p["name"], "name_en": p["name"] if p["name_de"] else None,
              "bild": f"/karten/bild/{spiel}/{p['datei']}" if p["datei"] else None,
-             **({"cardmarket": pp} if pp else {})} for p, pp in zip(produkte, preise.fuer_release(spiel, produkte))]
+             **({"cardmarket": pp} if pp else {})} for p, pp in zip(produkte, preisliste)]
 
 
-def produkte_liste(rid: int) -> list[dict] | None:
+def produkte_liste(rid: int, mit_preisen: bool = False) -> list[dict] | None:
     """Nur die Produkte eines Sets (für die Detailansicht im Kalender)."""
     r = db.release(rid, mit_spiel=True)
     if not r or not ist_aktiv(r["spiel"]):
@@ -723,10 +724,11 @@ def produkte_liste(rid: int) -> list[dict] | None:
     if not produkte:
         ziel = _wellen({r["spiel"]}, anzahlen(eigene_nur=True)).get(rid)
         produkte = produkte_modul.fuer_release(ziel) if ziel else []
-    return _produkte_ausgabe(r["spiel"], produkte)
+    return _produkte_ausgabe(r["spiel"], produkte, mit_preisen)
 
 
-def liste(rid: int) -> dict | None:
+def liste(rid: int, mit_preisen: bool = False) -> dict | None:
+    """Kartenliste eines Sets; Cardmarket-Preise und -Links nur mit mit_preisen (angemeldete Verwaltung)."""
     r = db.release(rid, mit_spiel=True)
     if not r or not ist_aktiv(r["spiel"]):
         return None
@@ -751,14 +753,14 @@ def liste(rid: int) -> dict | None:
             "LEFT JOIN kartenbilder b ON b.url = k.bild_url WHERE k.release_id = ? ORDER BY k.pos", (quelle_rid,))]
     q = QUELLE_JE_SPIEL[r["spiel"]]
     from . import preise, setbilder
-    preisliste = preise.fuer_release(r["spiel"], karten)
+    preisliste = preise.fuer_release(r["spiel"], karten) if mit_preisen else [None] * len(karten)
     return {
         "release": {**{k: r[k] for k in ("id", "spiel", "spiel_name", "spiel_farbe", "name", "name_de", "code", "typ", "datum",
                                          "genauigkeit", "status_effektiv")}, **setbilder.zuordnung().get(rid, {})},
         "quelle": {"name": QUELLEN_NAMEN[q], "url": QUELLEN_LINKS[q]},
         "abgerufen": kl["abgerufen"] if kl else None,
-        "produkte": _produkte_ausgabe(r["spiel"], produkte),
-        "preise_stand": preise.stand_fuer(r["spiel"]) if preise.aktiv() else None,
+        "produkte": _produkte_ausgabe(r["spiel"], produkte, mit_preisen),
+        "preise_stand": preise.stand_fuer(r["spiel"]) if mit_preisen and preise.aktiv() else None,
         "karten": [{"nummer": k["nummer"], "name": k["name"], "seltenheit": k["seltenheit"], "art": k["art"],
                     "variante": k["variante"],
                     "bild": f"/karten/bild/{r['spiel']}/{k['datei']}" if k["datei"] else None,

@@ -50,9 +50,15 @@
     try {
       const r = await fetch("/api/login", {
         method: "POST", headers: { "Content-Type": "application/json", "X-Admin-Anfrage": "1" },
-        body: JSON.stringify({ benutzer: f.elements.benutzer.value, passwort: f.elements.passwort.value, merken: f.elements.merken.checked }),
+        body: JSON.stringify({ benutzer: f.elements.benutzer.value, passwort: f.elements.passwort.value, merken: f.elements.merken.checked,
+                              weiter: new URLSearchParams(location.search).get("weiter") || "" }),
       });
-      if (r.ok) { location.replace("/admin"); return; }
+      if (r.ok) {
+        // Ziel prüft der Server (nur Pfade dieser Seite)
+        const j = await r.json().catch(() => ({}));
+        location.replace(typeof j.weiter === "string" && j.weiter.startsWith("/") && !j.weiter.startsWith("//") ? j.weiter : "/admin");
+        return;
+      }
       const j = await r.json().catch(() => ({}));
       fehler.textContent = j.detail || "Anmeldung fehlgeschlagen.";
     } catch (err) {

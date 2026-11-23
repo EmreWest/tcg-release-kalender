@@ -11,7 +11,7 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 - Archiv mit allen vergangenen Releases, nach Jahr und Monat gruppiert und mit denselben Filtern durchsuchbar. Beim ersten Start werden einmalig die bisherigen Sets aller Spiele abgerufen (rund 1.900 Einträge seit 1993) und bleiben dauerhaft gespeichert.
 - Set-Symbole und Logos (Magic, Pokémon, Yu-Gi-Oh!, Flesh and Blood) in Liste, Archiv, Detailansicht und Kartenlisten – einmal geladen und lokal gespeichert.
 - Deutscher und englischer Set-Name: Ist ein deutscher Name hinterlegt, steht er als Titel, der englische darunter; die Suche findet beide.
-- Optional Kartenlisten mit Bildern je Set, mit Cardmarket-Preistrend und -Link je Karte und den versiegelten Produkten des Sets (Display, Booster, Bundle …), pro Spiel in der Verwaltung freischaltbar, mit eigener Übersicht aller Sets (`/karten`). Daten und Bilder werden einmal abgerufen und lokal gespeichert.
+- Optional Kartenlisten mit Bildern je Set, mit Cardmarket-Preistrend und -Link je Karte (nur angemeldet sichtbar) und den versiegelten Produkten des Sets (Display, Booster, Bundle …), pro Spiel in der Verwaltung freischaltbar, mit eigener Übersicht aller Sets (`/karten`). Daten und Bilder werden einmal abgerufen und lokal gespeichert.
 - Eigene Logos je Spiel: In der Verwaltung hochladen, sie erscheinen in den Filtern, an den Terminen und in der Detailansicht.
 - Kalender-Abo (`webcal://`) mit den gewählten Filtern; einzelne Termine lassen sich auch als `.ics`-Datei speichern.
 - Helles und dunkles Design (folgt standardmäßig der Systemeinstellung, umschaltbar).
@@ -172,7 +172,12 @@ kalender.example.org {
 }
 ```
 
-Die Verwaltung ist per Anmeldeseite geschützt (`/login`). Nach der Anmeldung gilt ein Sitzungs-Cookie (HttpOnly, SameSite=Strict, über HTTPS mit Secure) 12 Stunden, mit „Angemeldet bleiben“ 30 Tage. Sitzungen überstehen Neustarts und werden ungültig, sobald `ADMIN_PASSWORT` geändert wird. Nach 5 Fehlversuchen ist die Anmeldung von dieser IP-Adresse für 15 Minuten gesperrt; damit die echte Adresse ankommt, muss der Reverse Proxy `X-Forwarded-For` setzen (bei HAProxy die Option „forwardfor“). Für Skripte funktionieren Benutzer und Passwort per HTTP Basic Auth weiterhin.
+Die Verwaltung ist per Anmeldeseite geschützt (`/login`, auf allen öffentlichen Seiten unten als „Anmelden“ verlinkt; danach geht es zurück auf die Seite, von der man kam). Angemeldet erscheint oben „Verwaltung“ und unten „Abmelden“.
+
+- Sitzungs-Cookie: HttpOnly, SameSite=Strict, über HTTPS mit Secure; gültig 12 Stunden, mit „Angemeldet bleiben“ 30 Tage. Die Sitzungen liegen serverseitig in der Datenbank (nur als Hash): Abmelden macht den Cookie sofort ungültig, ein Neustart nicht. Ein geändertes `ADMIN_PASSWORT` beendet alle Sitzungen.
+- Nach 5 Fehlversuchen ist die Anmeldung von dieser Adresse 15 Minuten gesperrt, nach 30 Fehlversuchen insgesamt (viele Adressen) für alle. Bestehende Sitzungen bleiben davon unberührt. Gezählt wird der letzte Eintrag in `X-Forwarded-For`, also der, den der Reverse Proxy anhängt (bei HAProxy die Option „forwardfor“); vorne selbst eingetragene Adressen helfen einem Angreifer nicht.
+- Für Skripte funktionieren Benutzer und Passwort per HTTP Basic Auth weiterhin, mit derselben Sperre.
+- Ein langes, zufälliges `ADMIN_PASSWORT` (20+ Zeichen) ist der wichtigste Schutz.
 
 Öffentlich nur über HTTPS betreiben. Wer mag, beschränkt `/login`, `/admin` und `/api/admin/*` im Reverse Proxy zusätzlich auf das eigene Netz.
 
@@ -325,7 +330,7 @@ Hinweise:
 
 ### Cardmarket-Preise
 
-Standardmäßig an (abschaltbar unter Verwaltung → Kartenlisten). Cardmarket veröffentlicht Produktkatalog und Preisführer täglich als freie Dateien; der Container lädt sie einmal am Tag für die Spiele mit freigeschalteten Kartenlisten und zeigt je Karte den Preistrend, in der Großansicht zusätzlich 30-Tage-Schnitt, günstigstes Angebot und Foil-Trend, sowie einen Link zu Cardmarket. Die Kartenseite lässt sich nach Preis sortieren.
+Standardmäßig an (abschaltbar unter Verwaltung → Kartenlisten). Preise und Cardmarket-Links sieht nur die angemeldete Verwaltung; öffentliche Besucher sehen Kartenlisten und Produkte ohne beides (der Server liefert sie ohne Anmeldung gar nicht aus). Cardmarket veröffentlicht Produktkatalog und Preisführer täglich als freie Dateien; der Container lädt sie einmal am Tag für die Spiele mit freigeschalteten Kartenlisten und zeigt je Karte den Preistrend, in der Großansicht zusätzlich 30-Tage-Schnitt, günstigstes Angebot und Foil-Trend, sowie einen Link zu Cardmarket. Die Kartenseite lässt sich nach Preis sortieren.
 
 - Magic und Pokémon werden über die Cardmarket-Produktnummer der Datenquelle zugeordnet, alle anderen Spiele über Erweiterung, Kartennummer und Namen.
 - Gibt es mehrere Versionen einer Karte (normale und Alternate-Art-Version, verschiedene Seltenheiten), werden sie über die Preisreihenfolge einander zugeordnet: Die eigenen Karten werden nach dem TCGplayer-Marktpreis des Sets geordnet (fehlt der, nach Seltenheit), die Cardmarket-Versionen nach Preistrend, dann wird paarweise zugeordnet. So landet z. B. bei Pokémon die meist teurere Special Illustration Rare richtig, auch wenn die Mega Hyper Rare (Gold) die höhere Seltenheit ist. Die Großansicht weist auf diese Zuordnung hin. Lässt es sich nicht entscheiden (z. B. zwei gleichwertige Versionen), stehen Preisspanne und ein Link auf die Versionsliste bei Cardmarket da.

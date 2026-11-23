@@ -373,6 +373,7 @@ img.logo { display: inline-block; object-fit: contain; flex: none; vertical-alig
 /* Fußzeile */
 .fuss { display: flex; flex-wrap: wrap; gap: 6px 18px; padding-top: 0; padding-bottom: 28px; font-size: 13px; color: var(--text2); }
 .fuss a { color: var(--text2); }
+.fuss-login { margin-left: auto; }
 .fuss a:hover, .link-knopf:hover { color: var(--text); }
 .link-knopf { background: none; border: 0; padding: 0; color: var(--text2); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; font-size: 13px; }
 .text-seite .fuss { padding: 20px 0 0; }

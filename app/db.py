@@ -148,6 +148,11 @@ CREATE TABLE IF NOT EXISTS cm_produkte (
     expansion INTEGER,
     art TEXT NOT NULL DEFAULT 'einzel'
 );
+CREATE TABLE IF NOT EXISTS sitzungen (
+    kennung TEXT PRIMARY KEY,
+    ablauf INTEGER NOT NULL,
+    erstellt TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS setprodukte (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     release_id INTEGER NOT NULL,

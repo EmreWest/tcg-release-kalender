@@ -49,6 +49,8 @@ async def lifespan(_app: FastAPI):
     notify.registrieren()
     if not ADMIN_PASSWORT:
         log.warning("ADMIN_PASSWORT ist nicht gesetzt – der Admin-Bereich ist gesperrt.")
+    elif len(ADMIN_PASSWORT) < 16:
+        log.warning("ADMIN_PASSWORT ist kürzer als 16 Zeichen – für eine öffentlich erreichbare Seite zu schwach.")
     checker.starte_hintergrund()
     quellen.starte_hintergrund()
     karten.starte_hintergrund()
@@ -92,6 +94,11 @@ SITZUNG_STUNDEN = 12
 SITZUNG_MERKEN_TAGE = 30
 _FEHLVERSUCHE: dict[str, list[float]] = {}
 FEHLVERSUCHE_MAX, SPERRE_SEKUNDEN = 5, 15 * 60
+# Obergrenze über alle Adressen: verteilte Versuche (viele IPs) pausieren die Anmeldung für alle.
+# Bestehende Sitzungen bleiben davon unberührt.
+FEHLVERSUCHE_GESAMT_MAX = 30
+_GESAMT = "*"
+_sperre_lock = threading.Lock()
 
 
 def _zugang_ok(benutzer: str, passwort: str) -> bool:
@@ -110,24 +117,71 @@ def _sitzungs_schluessel() -> bytes:
     return hashlib.sha256(f"{basis}|{ADMIN_USER}|{ADMIN_PASSWORT}".encode()).digest()
 
 
-def _token(ablauf: int) -> str:
-    sig = hmac.new(_sitzungs_schluessel(), str(ablauf).encode(), hashlib.sha256).hexdigest()
-    return f"{ablauf}.{sig}"
+def _kennung(token: str) -> str:
+    # In der Datenbank steht nur ein Hash: Ein Datenbank-Backup verrät keine gültige Sitzung.
+    return hmac.new(_sitzungs_schluessel(), token.encode(), hashlib.sha256).hexdigest()
+
+
+def _sitzung_anlegen(dauer: int) -> str:
+    token = secrets.token_urlsafe(32)
+    jetzt, kennung = int(time.time()), _kennung(token)  # vor der Transaktion: legt ggf. den Schlüssel an
+    with db.verbindung() as con:
+        con.execute("DELETE FROM sitzungen WHERE ablauf < ?", (jetzt,))
+        con.execute("INSERT INTO sitzungen (kennung, ablauf, erstellt) VALUES (?,?,?)", (kennung, jetzt + dauer, db.jetzt()))
+    return token
 
 
 def _sitzung_gueltig(wert: str | None) -> bool:
-    if not wert or not ADMIN_PASSWORT or "." not in wert:
+    if not wert or not ADMIN_PASSWORT or len(wert) > 200:
         return False
-    ablauf, _, sig = wert.partition(".")
-    if not ablauf.isdigit() or int(ablauf) < time.time():
-        return False
-    return hmac.compare_digest(_token(int(ablauf)), wert)
+    kennung = _kennung(wert)
+    with db.verbindung() as con:
+        r = con.execute("SELECT ablauf FROM sitzungen WHERE kennung = ?", (kennung,)).fetchone()
+    return bool(r) and r["ablauf"] > time.time()
 
 
-def _angemeldet(request: Request, cred: HTTPBasicCredentials | None) -> bool:
+def _sitzung_beenden(wert: str | None):
+    if wert and len(wert) <= 200:
+        kennung = _kennung(wert)
+        with db.verbindung() as con:
+            con.execute("DELETE FROM sitzungen WHERE kennung = ?", (kennung,))
+
+
+def _client_ip(request: Request) -> str:
+    """Adresse für die Sperre nach Fehlversuchen. Der Reverse-Proxy hängt die echte Adresse hinten an
+    X-Forwarded-For an; weiter vorne stehende Einträge kann ein Besucher selbst setzen."""
+    kette = ",".join(request.headers.getlist("x-forwarded-for"))
+    eintraege = [e.strip() for e in kette.split(",") if e.strip()]
+    if eintraege:
+        return eintraege[-1][:64]
+    return request.client.host if request.client else "?"
+
+
+def _fehlversuch(ip: str):
+    jetzt = time.time()
+    with _sperre_lock:
+        _FEHLVERSUCHE.setdefault(ip, []).append(jetzt)
+        _FEHLVERSUCHE.setdefault(_GESAMT, []).append(jetzt)
+        if len(_FEHLVERSUCHE) > 10000:  # Speicher begrenzen
+            for k in [k for k, v in _FEHLVERSUCHE.items() if k != _GESAMT and all(jetzt - t >= SPERRE_SEKUNDEN for t in v)]:
+                del _FEHLVERSUCHE[k]
+
+
+def _angemeldet(request: Request, cred: HTTPBasicCredentials | None = None) -> bool:
     if _sitzung_gueltig(request.cookies.get(SITZUNG_COOKIE)):
         return True
-    return cred is not None and _zugang_ok(cred.username, cred.password)
+    if cred is None:
+        return False
+    # Basic Auth unterliegt derselben Sperre wie die Anmeldeseite
+    ip = _client_ip(request)
+    if _gesperrt(ip):
+        return False
+    if _zugang_ok(cred.username, cred.password):
+        return True
+    _fehlversuch(ip)
+    log.warning("Fehlgeschlagene Anmeldung (Basic Auth) von %s", ip)
+    time.sleep(1)
+    return False
 
 
 def admin(request: Request, cred: HTTPBasicCredentials | None = Depends(security)):
@@ -138,9 +192,19 @@ def admin(request: Request, cred: HTTPBasicCredentials | None = Depends(security
 
 def _gesperrt(ip: str) -> bool:
     jetzt = time.time()
-    versuche = [t for t in _FEHLVERSUCHE.get(ip, []) if jetzt - t < SPERRE_SEKUNDEN]
-    _FEHLVERSUCHE[ip] = versuche
-    return len(versuche) >= FEHLVERSUCHE_MAX
+    with _sperre_lock:
+        for k in (ip, _GESAMT):
+            _FEHLVERSUCHE[k] = [t for t in _FEHLVERSUCHE.get(k, []) if jetzt - t < SPERRE_SEKUNDEN]
+        return len(_FEHLVERSUCHE[ip]) >= FEHLVERSUCHE_MAX or len(_FEHLVERSUCHE[_GESAMT]) >= FEHLVERSUCHE_GESAMT_MAX
+
+
+def _sicheres_ziel(weiter: str | None) -> str:
+    """Nur Pfade dieser Seite als Ziel nach der Anmeldung (kein Weiterleiten auf fremde Seiten)."""
+    w = (weiter or "").strip()
+    if w.startswith("/") and not w.startswith(("//", "/\\")) and "\\" not in w and len(w) < 500 \
+            and not any(ord(c) < 32 for c in w) and not w.startswith("/login"):
+        return w
+    return "/admin"
 
 
 def basis(request: Request) -> str:
@@ -173,7 +237,8 @@ def _seite(datei: str, extra: dict | None = None, status_code: int = 200) -> Res
         apple = f'<link rel="apple-touch-icon" href="/logos/{html.escape(favicon)}">'
     fuss = ['<a href="/impressum">Impressum</a>' if e["impressum"] else "",
             '<a href="/datenschutz">Datenschutz</a>' if e["datenschutz"] else "",
-            '<button type="button" class="link-knopf" data-speicher-einstellungen>Speicher-Einstellungen</button>']
+            '<button type="button" class="link-knopf" data-speicher-einstellungen>Speicher-Einstellungen</button>',
+            '<a href="/login" class="fuss-login" data-login rel="nofollow">Anmelden</a>' if ADMIN_PASSWORT else ""]
     ersetzungen = {
         "{{TITEL}}": titel,
         "{{UNTERTITEL}}": html.escape(e["untertitel"]),
@@ -323,20 +388,29 @@ def api_archiv(spiele: str | None = None, typ: str | None = None):
     return {"anzahl": len(rows), "releases": rows}
 
 
+# Cardmarket-Preise und -Links nur für die angemeldete Verwaltung: Ohne Anmeldung verlassen sie den
+# Server gar nicht. Die Antworten dürfen deshalb nirgends zwischengespeichert werden.
+_PRIVAT = {"Cache-Control": "private, no-store", "Vary": "Cookie, Authorization"}
+
+
+def _preise_sichtbar(request: Request, cred: HTTPBasicCredentials | None) -> bool:
+    return _angemeldet(request, cred)
+
+
 @app.get("/api/karten/{rid}")
-def api_karten(rid: int):
-    daten = karten.liste(rid)
+def api_karten(rid: int, request: Request, cred: HTTPBasicCredentials | None = Depends(security)):
+    daten = karten.liste(rid, mit_preisen=_preise_sichtbar(request, cred))
     if not daten:
         raise HTTPException(404, "Keine Kartenliste vorhanden")
-    return daten
+    return JSONResponse(daten, headers=_PRIVAT)
 
 
 @app.get("/api/produkte/{rid}")
-def api_produkte(rid: int):
-    daten = karten.produkte_liste(rid)
+def api_produkte(rid: int, request: Request, cred: HTTPBasicCredentials | None = Depends(security)):
+    daten = karten.produkte_liste(rid, mit_preisen=_preise_sichtbar(request, cred))
     if daten is None:
         raise HTTPException(404, "Keine Produkte vorhanden")
-    return {"produkte": daten}
+    return JSONResponse({"produkte": daten}, headers=_PRIVAT)
 
 
 @app.get("/api/kartenlisten")
@@ -463,9 +537,9 @@ def admin_seite(request: Request, cred: HTTPBasicCredentials | None = Depends(se
 
 
 @app.get("/login", include_in_schema=False)
-def login_seite(request: Request):
+def login_seite(request: Request, weiter: str | None = None):
     if _sitzung_gueltig(request.cookies.get(SITZUNG_COOKIE)):
-        return RedirectResponse("/admin", status_code=303)
+        return RedirectResponse(_sicheres_ziel(weiter), status_code=303)
     hinweis = "" if ADMIN_PASSWORT else (
         '<p class="login-fehler">Der Verwaltungsbereich ist gesperrt, weil <code>ADMIN_PASSWORT</code> nicht gesetzt ist.</p>')
     return _seite("login.html", {"{{LOGIN_HINWEIS}}": hinweis})
@@ -473,27 +547,40 @@ def login_seite(request: Request):
 
 @app.post("/api/login", include_in_schema=False)
 def login(request: Request, daten: dict = Body(...)):
-    ip = request.client.host if request.client else "?"
+    ip = _client_ip(request)
     if _gesperrt(ip):
         raise HTTPException(429, "Zu viele Fehlversuche. Bitte in 15 Minuten erneut versuchen.")
-    if not _zugang_ok(str(daten.get("benutzer") or ""), str(daten.get("passwort") or "")):
-        _FEHLVERSUCHE.setdefault(ip, []).append(time.time())
+    if not _zugang_ok(str(daten.get("benutzer") or "")[:200], str(daten.get("passwort") or "")[:500]):
+        _fehlversuch(ip)
         log.warning("Fehlgeschlagene Anmeldung von %s", ip)
         time.sleep(1)  # bremst das Durchprobieren von Passwörtern
         raise HTTPException(401, "Benutzername oder Passwort falsch")
-    _FEHLVERSUCHE.pop(ip, None)
+    with _sperre_lock:
+        _FEHLVERSUCHE.pop(ip, None)
+    log.info("Anmeldung von %s", ip)
     dauer = SITZUNG_MERKEN_TAGE * 86400 if daten.get("merken") else SITZUNG_STUNDEN * 3600
-    antwort = JSONResponse({"ok": True})
-    antwort.set_cookie(SITZUNG_COOKIE, _token(int(time.time()) + dauer), max_age=dauer if daten.get("merken") else None,
+    _sitzung_beenden(request.cookies.get(SITZUNG_COOKIE))  # alte Sitzung dieses Browsers ersetzen
+    antwort = JSONResponse({"ok": True, "weiter": _sicheres_ziel(daten.get("weiter"))},
+                           headers={"Cache-Control": "no-store"})
+    antwort.set_cookie(SITZUNG_COOKIE, _sitzung_anlegen(dauer), max_age=dauer if daten.get("merken") else None,
                        httponly=True, samesite="strict", secure=request.url.scheme == "https", path="/")
     return antwort
 
 
 @app.post("/api/logout", include_in_schema=False)
-def logout():
-    antwort = JSONResponse({"ok": True})
-    antwort.delete_cookie(SITZUNG_COOKIE, path="/")
+def logout(request: Request):
+    _sitzung_beenden(request.cookies.get(SITZUNG_COOKIE))
+    antwort = JSONResponse({"ok": True}, headers={"Cache-Control": "no-store"})
+    antwort.delete_cookie(SITZUNG_COOKIE, path="/", httponly=True, samesite="strict",
+                          secure=request.url.scheme == "https")
     return antwort
+
+
+@app.get("/api/sitzung", include_in_schema=False)
+def sitzung(request: Request):
+    """Nur für die Oberfläche: ob Verwaltungs-Link und Preise angezeigt werden."""
+    return JSONResponse({"angemeldet": _sitzung_gueltig(request.cookies.get(SITZUNG_COOKIE))},
+                        headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/admin/einstellungen")
