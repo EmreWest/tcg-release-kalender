@@ -78,6 +78,11 @@ def _fabcube() -> dict:
 
 def _tcgdex(verknuepft: set[str], bekannt: dict) -> dict:
     ergebnis = {}
+    # Deutsche Logos gibt es nur für einen Teil der Sets – sonst das englische Logo verwenden
+    try:
+        englisch = {s["id"]: s for s in quellen._laden("https://api.tcgdex.net/v2/en/sets")}
+    except Exception:  # noqa: BLE001
+        englisch = {}
     for s in quellen._laden("https://api.tcgdex.net/v2/de/sets"):
         eid = f"tcgdex:{s['id']}"
         if eid not in verknuepft:
@@ -91,6 +96,8 @@ def _tcgdex(verknuepft: set[str], bekannt: dict) -> dict:
             except Exception:  # noqa: BLE001
                 pass
             time.sleep(0.1)
+        en = englisch.get(s["id"]) or {}
+        symbol, logo = symbol or en.get("symbol"), logo or en.get("logo")
         if symbol or logo:
             ergebnis[eid] = {"symbol": f"{symbol}.webp" if symbol else None, "logo": f"{logo}.webp" if logo else None}
     return ergebnis
@@ -140,12 +147,47 @@ def _verknuepfen():
             log.warning("Set-Bilder: Zuordnung über %s fehlgeschlagen", name)
 
 
+def _deutsche_namen_magic():
+    """Deutsche Magic-Set-Namen aus MTGJSON (dort gepflegt bis etwa 2023), höchstens einmal pro Woche."""
+    letzte = db.meta_get("mtgjson_stand")
+    if letzte and datetime.now(timezone.utc) - datetime.fromisoformat(letzte) < timedelta(days=7):
+        return
+    if "magic" not in {s["id"] for s in db.spiele()}:
+        return
+    daten = quellen._laden("https://mtgjson.com/api/v5/SetList.json").get("data") or []
+    deutsch = {s["code"].upper(): (s.get("translations") or {}).get("German") for s in daten if s.get("code")}
+    with db.verbindung() as con:
+        rows = con.execute("SELECT id, code FROM releases WHERE spiel = 'magic' AND code IS NOT NULL "
+                           "AND (name_de IS NULL OR name_de = '')").fetchall()
+    n = sum(db.name_de_ergaenzen(r["id"], deutsch.get(r["code"].upper())) for r in rows)
+    db.meta_set("mtgjson_stand", datetime.now(timezone.utc).isoformat())
+    log.info("Deutsche Magic-Set-Namen: %d ergänzt", n)
+
+
+def _deutsche_namen_pokemon():
+    """Deutsche Pokémon-Set-Namen aus TCGdex für zugeordnete Termine ohne deutschen Namen."""
+    with db.verbindung() as con:
+        rows = con.execute("SELECT r.id, q.extern_id FROM releases r JOIN quellen_stand q ON q.release_id = r.id "
+                           "WHERE r.spiel = 'pokemon' AND q.extern_id LIKE 'tcgdex:%' "
+                           "AND (r.name_de IS NULL OR r.name_de = '')").fetchall()
+    if not rows:
+        return
+    namen = {f"tcgdex:{s['id']}": s.get("name") for s in quellen._laden("https://api.tcgdex.net/v2/de/sets")}
+    for r in rows:
+        db.name_de_ergaenzen(r["id"], namen.get(r["extern_id"]))
+
+
 def abgleichen() -> str:
     if not _lock.acquire(blocking=False):
         return "Läuft bereits."
     status["laeuft"] = True
     try:
         _verknuepfen()
+        for schritt in (_deutsche_namen_pokemon, _deutsche_namen_magic):
+            try:
+                schritt()
+            except Exception as e:  # noqa: BLE001
+                log.warning("Deutsche Set-Namen (%s) nicht abrufbar: %s", schritt.__name__, e)
         vorhanden = {s["id"] for s in db.spiele()}
         with db.verbindung() as con:
             links = con.execute("SELECT q.extern_id, q.release_id, r.spiel FROM quellen_stand q "

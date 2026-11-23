@@ -186,6 +186,7 @@ def _scryfall(set_id: str, set_name: str | None, kontext: dict) -> list[dict]:
                 "nummer": c.get("collector_number"), "name": c.get("name"),
                 "seltenheit": SCRYFALL_SELTENHEIT.get(c.get("rarity"), (c.get("rarity") or "").title() or None),
                 "art": c.get("type_line") or vorne.get("type_line"), "bild_url": bilder.get("normal"),
+                "cm_id": c.get("cardmarket_id"),
             })
         url = seite.get("next_page") if seite.get("has_more") else None
     return karten
@@ -266,20 +267,32 @@ def _fabcube(set_id: str, set_name: str | None, kontext: dict) -> list[dict]:
 def _tcgdex(set_id: str, set_name: str | None, kontext: dict) -> list[dict]:
     s = _laden(f"https://api.tcgdex.net/v2/de/sets/{quote(set_id)}")
     alt = kontext.get("bisher") or {}
+    # Für ältere Sets hat TCGdex oft keine deutschen Scans – dann das englische Kartenbild nehmen
+    ersatz = {}
+    if any(not c.get("image") for c in s.get("cards") or []):
+        try:
+            ersatz = {c.get("localId"): c.get("image") for c in
+                      _laden(f"https://api.tcgdex.net/v2/en/sets/{quote(set_id)}").get("cards") or [] if c.get("image")}
+        except Exception:  # noqa: BLE001
+            ersatz = {}
     karten = []
     for c in s.get("cards") or []:
+        bild = c.get("image") or ersatz.get(c.get("localId"))
         k = {"nummer": c.get("localId"), "name": c.get("name"),
-             "bild_url": f"{c['image']}/high.webp" if c.get("image") else None}
+             "bild_url": f"{bild}/high.webp" if bild else None}
         bekannt = alt.get(k["nummer"])
-        if bekannt and bekannt.get("seltenheit"):
-            k["seltenheit"], k["art"] = bekannt["seltenheit"], bekannt.get("art")
+        if bekannt and bekannt.get("seltenheit") and bekannt.get("cm_quelle"):
+            k["seltenheit"], k["art"], k["cm_id"] = bekannt["seltenheit"], bekannt.get("art"), bekannt["cm_quelle"]
         else:
-            # Seltenheit steht nur in den Einzeldaten der Karte – einmal laden, danach wiederverwenden
+            # Seltenheit und Cardmarket-Nummer stehen nur in den Einzeldaten der Karte –
+            # einmal laden, danach wiederverwenden
             try:
                 d = _laden(f"https://api.tcgdex.net/v2/de/cards/{quote(c['id'])}")
                 k["seltenheit"], k["art"] = d.get("rarity"), d.get("category")
+                k["cm_id"] = ((d.get("pricing") or {}).get("cardmarket") or {}).get("idProduct")
             except Exception:  # noqa: BLE001
-                pass
+                if bekannt:
+                    k["seltenheit"], k["art"] = bekannt.get("seltenheit"), bekannt.get("art")
             time.sleep(0.05)
         karten.append(k)
     return karten
@@ -303,7 +316,10 @@ def _tcgcsv_karten(produkte: list[dict]) -> list[dict]:
 def _tcgcsv(gruppe: str, set_name: str | None, kontext: dict) -> list[dict]:
     kategorie = quellen.TCGCSV_KATEGORIEN[kontext["spiel"]]
     time.sleep(0.2)
-    return _tcgcsv_karten(_laden(f"https://tcgcsv.com/tcgplayer/{kategorie}/{quote(gruppe)}/products").get("results") or [])
+    alle = _laden(f"https://tcgcsv.com/tcgplayer/{kategorie}/{quote(gruppe)}/products").get("results") or []
+    from . import produkte
+    kontext["sealed"] = produkte.sealed(alle)  # versiegelte Produkte kommen aus derselben Liste
+    return _tcgcsv_karten(alle)
 
 
 LISTEN = {"scryfall": _scryfall, "ygoprodeck": _ygoprodeck, "swudb": _swudb, "fabcube": _fabcube,
@@ -325,12 +341,14 @@ def _liste_speichern(rid: int, spiel: str, extern_id: str, karten: list[dict]):
             url = None
         if url:
             urls.add(url)
+        cm = k.get("cm_id")
         zeilen.append((rid, spiel, pos, _text(k.get("nummer"), 40), _text(k.get("name")), _text(k.get("seltenheit"), 60),
-                       _text(k.get("art"), 120), _text(k.get("variante"), 60), url))
+                       _text(k.get("art"), 120), _text(k.get("variante"), 60), url,
+                       int(cm) if str(cm or "").isdigit() else None))
     with db.verbindung() as con:
         con.execute("DELETE FROM karten WHERE release_id = ?", (rid,))
-        con.executemany("INSERT INTO karten (release_id, spiel, pos, nummer, name, seltenheit, art, variante, bild_url) "
-                        "VALUES (?,?,?,?,?,?,?,?,?)", zeilen)
+        con.executemany("INSERT INTO karten (release_id, spiel, pos, nummer, name, seltenheit, art, variante, bild_url, cm_quelle) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?)", zeilen)
         con.executemany("INSERT OR IGNORE INTO kartenbilder (url, spiel) VALUES (?, ?)", [(u, spiel) for u in urls])
         con.execute("INSERT INTO kartenlisten (release_id, spiel, extern_id, anzahl, abgerufen, fehler) VALUES (?,?,?,?,?,NULL) "
                     "ON CONFLICT(release_id) DO UPDATE SET spiel = excluded.spiel, extern_id = excluded.extern_id, "
@@ -406,7 +424,8 @@ def _bilder_laden(spiel: str):
     with db.verbindung() as con:
         offen = [r["url"] for r in con.execute(
             "SELECT url FROM kartenbilder WHERE spiel = ? AND datei IS NULL AND fehler < 3 "
-            "AND url IN (SELECT bild_url FROM karten WHERE spiel = ?)", (spiel, spiel))]
+            "AND url IN (SELECT bild_url FROM karten WHERE spiel = ? UNION SELECT bild_url FROM setprodukte WHERE spiel = ?)",
+            (spiel, spiel, spiel))]
     status.update(schritt="Bilder", fertig=0, gesamt=len(offen))
 
     def einzeln(url):
@@ -439,7 +458,9 @@ def _aufraeumen(spiel: str):
     """Bilder entfernen, die keine Karte mehr braucht (z. B. nach neuer Version eines Scans)."""
     with db.verbindung() as con:
         weg = con.execute("SELECT url, datei FROM kartenbilder WHERE spiel = ? AND url NOT IN "
-                          "(SELECT bild_url FROM karten WHERE spiel = ? AND bild_url IS NOT NULL)", (spiel, spiel)).fetchall()
+                          "(SELECT bild_url FROM karten WHERE spiel = ? AND bild_url IS NOT NULL "
+                          "UNION SELECT bild_url FROM setprodukte WHERE spiel = ? AND bild_url IS NOT NULL)",
+                          (spiel, spiel, spiel)).fetchall()
         for r in weg:
             if r["datei"]:
                 try:
@@ -495,15 +516,28 @@ def _abrufen_intern(spiel: str, alle: bool) -> str:
             if q == "tcgdex":
                 with db.verbindung() as con:
                     kontext["bisher"] = {r["nummer"]: dict(r) for r in con.execute(
-                        "SELECT nummer, seltenheit, art FROM karten WHERE release_id = ?", (s["release_id"],))}
+                        "SELECT nummer, seltenheit, art, cm_quelle FROM karten WHERE release_id = ?", (s["release_id"],))}
             karten = LISTEN[q](kennung, s["quell_name"], kontext)
             _liste_speichern(s["release_id"], spiel, s["extern_id"], karten)
+            try:
+                from . import produkte
+                produkte.speichern(s["release_id"], spiel,
+                                   produkte.laden(spiel, db.release(s["release_id"]) or {}, s["extern_id"], kontext))
+            except Exception as e:  # noqa: BLE001
+                log.warning("Produkte zu %s nicht abrufbar: %s", s["release_name"], e)
+            kontext.pop("sealed", None)
         except Exception as e:  # noqa: BLE001
             fehler += 1
             log.warning("Kartenliste %s (%s) fehlgeschlagen: %s", s["release_name"], s["extern_id"], e)
             _fehler_vermerken(s["release_id"], spiel, s["extern_id"], str(e))
         status["fertig"] += 1
     kontext.clear()
+    # Cardmarket-Zuordnung für die neuen Listen (die Preisdaten selbst kommen aus dem täglichen Abruf)
+    try:
+        from . import preise
+        preise.zuordnen(spiel)
+    except Exception:  # noqa: BLE001
+        log.exception("Cardmarket-Zuordnung %s fehlgeschlagen", spiel)
     if not _abbruch.is_set():
         _bilder_laden(spiel)
     _aufraeumen(spiel)
@@ -569,7 +603,7 @@ def loeschen(spiel: str):
     with _wl_lock:
         _warteschlange[:] = [x for x in _warteschlange if x[0] != spiel]
     with db.verbindung() as con:
-        for tabelle in ("karten", "kartenlisten", "kartenbilder"):
+        for tabelle in ("karten", "kartenlisten", "kartenbilder", "setprodukte"):
             con.execute(f"DELETE FROM {tabelle} WHERE spiel = ?", (spiel,))
     shutil.rmtree(os.path.join(verzeichnis(), spiel), ignore_errors=True)
     _stand_setzen(spiel, None)
@@ -581,11 +615,14 @@ def zahlen(spiel: str) -> dict:
     with db.verbindung() as con:
         listen = con.execute("SELECT COUNT(*) AS n, COALESCE(SUM(anzahl), 0) AS k FROM kartenlisten "
                              "WHERE spiel = ? AND anzahl > 0", (spiel,)).fetchone()
+        preise = con.execute("SELECT COUNT(cm_id) AS e, COUNT(cm_kandidaten) AS m FROM karten WHERE spiel = ?",
+                             (spiel,)).fetchone()
         bilder = con.execute("SELECT COUNT(*) AS n, COUNT(datei) AS lokal, COALESCE(SUM(bytes), 0) AS b, "
                              "SUM(CASE WHEN datei IS NULL AND fehler >= 3 THEN 1 ELSE 0 END) AS fehlt "
                              "FROM kartenbilder WHERE spiel = ?", (spiel,)).fetchone()
     return {"sets_mit_liste": listen["n"], "karten": listen["k"], "bilder_gesamt": bilder["n"],
-            "bilder_lokal": bilder["lokal"], "bilder_fehlen": bilder["fehlt"] or 0, "bytes": bilder["b"]}
+            "bilder_lokal": bilder["lokal"], "bilder_fehlen": bilder["fehlt"] or 0, "bytes": bilder["b"],
+            "preise_eindeutig": preise["e"], "preise_mehrdeutig": preise["m"]}
 
 
 def uebersicht() -> dict:
@@ -610,15 +647,53 @@ def uebersicht() -> dict:
             "intervall_stunden": INTERVALL_STUNDEN}
 
 
-def anzahlen() -> dict[int, int]:
-    """Anzahl Karten je Termin – nur für freigeschaltete Spiele."""
+_WELLE = re.compile(r"\s*[\(\[]?\s*[-–:]?\s*\b(welle|wave|teil|part)\s*\d+\s*[\)\]]?", re.I)
+
+
+def _grundname(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", _WELLE.sub("", name or "").lower())
+
+
+def _wellen(aktiv: set[str], eigene: dict[int, int]) -> dict[int, int]:
+    """Termine ohne eigene Liste, die eine weitere Welle eines Sets sind, z. B.
+    „30th Celebration Premium (Welle 4)“ oder „30th Celebration ex Tins & Binder Collection (Welle 5)“
+    -> Liste von „30th Celebration“. Zugeordnet wird das Set mit Liste, dessen Name am längsten mit dem
+    Namen der Welle übereinstimmt. Ergebnis: Termin -> Termin mit Liste."""
+    if not aktiv or not eigene:
+        return {}
+    with db.verbindung() as con:
+        rows = con.execute(f"SELECT id, spiel, name, datum FROM releases WHERE spiel IN ({','.join('?' * len(aktiv))})",
+                           sorted(aktiv)).fetchall()
+    mit_liste: dict[str, list] = {}
+    for r in rows:
+        if eigene.get(r["id"]):
+            mit_liste.setdefault(r["spiel"], []).append((_grundname(r["name"]), r))
+    zuordnung = {}
+    for r in rows:
+        if eigene.get(r["id"]) or not _WELLE.search(r["name"] or ""):
+            continue
+        grund = _grundname(r["name"])
+        passend = [(len(g), -abs((date.fromisoformat(r["datum"]) - date.fromisoformat(x["datum"])).days), x["id"])
+                   for g, x in mit_liste.get(r["spiel"], []) if len(g) >= 6 and grund.startswith(g)
+                   and x["datum"] <= r["datum"]]
+        if passend:
+            zuordnung[r["id"]] = max(passend)[2]
+    return zuordnung
+
+
+def anzahlen(eigene_nur: bool = False) -> dict[int, int]:
+    """Anzahl Karten je Termin – nur für freigeschaltete Spiele. Weitere Wellen eines Sets
+    bekommen die Liste des Sets mit (außer bei eigene_nur)."""
     aktiv = freigeschaltet()
     if not aktiv:
         return {}
     with db.verbindung() as con:
         rows = con.execute(f"SELECT release_id, anzahl FROM kartenlisten WHERE anzahl > 0 AND spiel IN "
                            f"({','.join('?' * len(aktiv))})", sorted(aktiv)).fetchall()
-    return {r["release_id"]: r["anzahl"] for r in rows}
+    eigene = {r["release_id"]: r["anzahl"] for r in rows}
+    if eigene_nur or not eigene:
+        return eigene
+    return eigene | {rid: eigene[ziel] for rid, ziel in _wellen(aktiv, eigene).items()}
 
 
 def liste(rid: int) -> dict | None:
@@ -627,21 +702,39 @@ def liste(rid: int) -> dict | None:
         return None
     with db.verbindung() as con:
         kl = con.execute("SELECT * FROM kartenlisten WHERE release_id = ? AND anzahl > 0", (rid,)).fetchone()
-        if not kl:
-            return None
-        karten = con.execute(
-            "SELECT k.nummer, k.name, k.seltenheit, k.art, k.variante, b.datei FROM karten k "
-            "LEFT JOIN kartenbilder b ON b.url = k.bild_url WHERE k.release_id = ? ORDER BY k.pos", (rid,)).fetchall()
+    quelle_rid = rid
+    if not kl:
+        # Weitere Welle eines Sets: Liste des Sets verwenden
+        ziel = _wellen({r["spiel"]}, anzahlen(eigene_nur=True)).get(rid)
+        if ziel:
+            quelle_rid = ziel
+            with db.verbindung() as con:
+                kl = con.execute("SELECT * FROM kartenlisten WHERE release_id = ? AND anzahl > 0", (ziel,)).fetchone()
+    from . import produkte as produkte_modul
+    produkte = produkte_modul.fuer_release(rid) or (produkte_modul.fuer_release(quelle_rid) if quelle_rid != rid else [])
+    if not kl and not produkte:
+        return None
+    with db.verbindung() as con:
+        karten = [dict(k) for k in con.execute(
+            "SELECT k.nummer, k.name, k.seltenheit, k.art, k.variante, k.cm_id, k.cm_kandidaten, b.datei FROM karten k "
+            "LEFT JOIN kartenbilder b ON b.url = k.bild_url WHERE k.release_id = ? ORDER BY k.pos", (quelle_rid,))]
     q = QUELLE_JE_SPIEL[r["spiel"]]
-    from . import setbilder
+    from . import preise, setbilder
+    preisliste = preise.fuer_release(r["spiel"], karten)
+    produkt_preise = preise.fuer_release(r["spiel"], produkte)
     return {
-        "release": {**{k: r[k] for k in ("id", "spiel", "spiel_name", "spiel_farbe", "name", "code", "typ", "datum",
+        "release": {**{k: r[k] for k in ("id", "spiel", "spiel_name", "spiel_farbe", "name", "name_de", "code", "typ", "datum",
                                          "genauigkeit", "status_effektiv")}, **setbilder.zuordnung().get(rid, {})},
         "quelle": {"name": QUELLEN_NAMEN[q], "url": QUELLEN_LINKS[q]},
-        "abgerufen": kl["abgerufen"],
+        "abgerufen": kl["abgerufen"] if kl else None,
+        "produkte": [{"name": p["name_de"] or p["name"], "name_en": p["name"] if p["name_de"] else None,
+                      "bild": f"/karten/bild/{r['spiel']}/{p['datei']}" if p["datei"] else None,
+                      **({"cardmarket": pp} if pp else {})} for p, pp in zip(produkte, produkt_preise)],
+        "preise_stand": preise.stand_fuer(r["spiel"]) if preise.aktiv() else None,
         "karten": [{"nummer": k["nummer"], "name": k["name"], "seltenheit": k["seltenheit"], "art": k["art"],
                     "variante": k["variante"],
-                    "bild": f"/karten/bild/{r['spiel']}/{k['datei']}" if k["datei"] else None} for k in karten],
+                    "bild": f"/karten/bild/{r['spiel']}/{k['datei']}" if k["datei"] else None,
+                    **({"cardmarket": p} if p else {})} for k, p in zip(karten, preisliste)],
     }
 
 

@@ -657,3 +657,36 @@ dialog.karte-dlg { width: min(860px, calc(100vw - 24px)); }
 .login-box .knopf.primaer { padding: 10px 14px; font-size: 15px; justify-content: center; }
 .login-fehler { margin: 0; padding: 9px 12px; border-radius: 8px; font-size: 14px; color: var(--rot); background: color-mix(in srgb, var(--rot) 10%, transparent); }
 .login-zurueck { text-align: center; font-size: 13px; color: var(--text2); }
+
+/* Cardmarket-Preise */
+.kartenpreis { font-size: 13px; font-weight: 650; color: var(--ok); }
+.kartenpreis.spanne { color: var(--text2); font-weight: 600; }
+.cm-knopf { margin-top: 14px; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
+.cm-knopf svg { width: 15px; height: 15px; }
+.karten-werkzeuge select#k-sortierung { min-width: 160px; }
+
+/* Deutscher und englischer Set-Name */
+.name-en { font-size: 12.5px; color: var(--text3); margin-top: 1px; }
+.archiv-name .name-en { display: block; margin: 0; font-size: 12px; }
+.detail-en { color: var(--text2); font-size: 14px; margin: -2px 0 4px; }
+.kachel-en { font-size: 12px; color: var(--text3); line-height: 1.3; }
+
+/* Produkte eines Sets */
+.abschnitt-titel { font-size: 17px; margin: 22px 0 10px; letter-spacing: -.01em; }
+.produkte .abschnitt-titel { margin-top: 18px; }
+.produkt-raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 10px; }
+.produkt {
+  display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px; align-items: center; padding: 10px 12px;
+  background: var(--fl); border: 1px solid var(--rand); border-radius: 12px; box-shadow: var(--schatten);
+  color: var(--text); text-decoration: none;
+}
+a.produkt:hover { border-color: var(--rand-stark); }
+.produkt-bild { display: flex; align-items: center; justify-content: center; height: 92px; background: #fff; border-radius: 8px; overflow: hidden; }
+.produkt-bild img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.produkt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.produkt-name { font-size: 14px; font-weight: 650; line-height: 1.3; overflow-wrap: anywhere; }
+.produkt-en { font-size: 12px; color: var(--text3); line-height: 1.3; }
+.produkt-preis { font-size: 13px; font-weight: 650; color: var(--ok); margin-top: 2px; }
+.produkt-link { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--akzent); }
+.produkt-link svg { width: 13px; height: 13px; }
+@media (max-width: 560px) { .produkt-raster { grid-template-columns: 1fr; } }

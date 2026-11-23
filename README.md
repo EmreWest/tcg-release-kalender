@@ -10,7 +10,8 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 - Die Leiste mit den Ansichten bleibt beim Scrollen oben stehen; „Heute“ (oder Taste T) springt in jeder Ansicht zum heutigen Datum.
 - Archiv mit allen vergangenen Releases, nach Jahr und Monat gruppiert und mit denselben Filtern durchsuchbar. Beim ersten Start werden einmalig die bisherigen Sets aller Spiele abgerufen (rund 1.900 Einträge seit 1993) und bleiben dauerhaft gespeichert.
 - Set-Symbole und Logos (Magic, Pokémon, Yu-Gi-Oh!, Flesh and Blood) in Liste, Archiv, Detailansicht und Kartenlisten – einmal geladen und lokal gespeichert.
-- Optional Kartenlisten mit Bildern je Set, pro Spiel in der Verwaltung freischaltbar, mit eigener Übersicht aller Sets (`/karten`). Daten und Bilder werden einmal abgerufen und lokal gespeichert.
+- Deutscher und englischer Set-Name: Ist ein deutscher Name hinterlegt, steht er als Titel, der englische darunter; die Suche findet beide.
+- Optional Kartenlisten mit Bildern je Set, mit Cardmarket-Preistrend und -Link je Karte und den versiegelten Produkten des Sets (Display, Booster, Bundle …), pro Spiel in der Verwaltung freischaltbar, mit eigener Übersicht aller Sets (`/karten`). Daten und Bilder werden einmal abgerufen und lokal gespeichert.
 - Eigene Logos je Spiel: In der Verwaltung hochladen, sie erscheinen in den Filtern, an den Terminen und in der Detailansicht.
 - Kalender-Abo (`webcal://`) mit den gewählten Filtern; einzelne Termine lassen sich auch als `.ics`-Datei speichern.
 - Helles und dunkles Design (folgt standardmäßig der Systemeinstellung, umschaltbar).
@@ -321,6 +322,23 @@ Hinweise:
 - Bei manchen Herstellern sind die Bilder Pressebilder mit „SAMPLE“-Aufdruck (z. B. One Piece, Dragon Ball Super, Gundam aus dem TCGplayer-Katalog).
 - Die Kartenbilder sind urheberrechtlich geschützt. Prüfe vor dem Freischalten, ob die Nutzung auf deiner Seite zulässig ist.
 
+### Cardmarket-Preise
+
+Standardmäßig an (abschaltbar unter Verwaltung → Kartenlisten). Cardmarket veröffentlicht Produktkatalog und Preisführer täglich als freie Dateien; der Container lädt sie einmal am Tag für die Spiele mit freigeschalteten Kartenlisten und zeigt je Karte den Preistrend, in der Großansicht zusätzlich 30-Tage-Schnitt, günstigstes Angebot und Foil-Trend, sowie einen Link zu Cardmarket. Die Kartenseite lässt sich nach Preis sortieren.
+
+- Magic und Pokémon werden über die Cardmarket-Produktnummer der Datenquelle zugeordnet, alle anderen Spiele über Erweiterung, Kartennummer und Namen.
+- Gibt es mehrere Versionen einer Karte (normale und Alternate-Art-Version, verschiedene Seltenheiten), zeigt die Seite die Preisspanne und verlinkt auf die Cardmarket-Suche.
+- Für Union Arena, Shadowverse: Evolve, hololive OCG und Grand Archive führt Cardmarket keine Einzelkarten, für Weiß Schwarz nur ältere Sets.
+- Nötig ist ausgehender Zugriff auf `downloads.s3.cardmarket.com`.
+
+### Produkte je Set
+
+Mit den Kartenlisten lädt der Container auch die versiegelten Produkte jedes Sets aus dem TCGplayer-Katalog (Display, Booster, Bundle, Top-Trainer-Box, Blister …) samt Produktbild; Kartons, Code-Karten und Händler-Sonderausgaben werden weggelassen. Sie stehen auf der Kartenseite unter „Produkte in diesem Set“ mit Preistrend und Cardmarket-Link. Die Namen werden ins Deutsche übertragen, wenn das Muster passt (z. B. „Surging Sparks Elite Trainer Box“ → „Stürmische Funken Top-Trainer-Box“), sonst bleibt der englische Name. Hat ein Set noch keine Karten, aber schon Produkte, führt der Knopf in der Detailansicht zu „Produkte“.
+
+### Mehrere Wellen
+
+Termine wie „30th Celebration Premium (Welle 4)“ bekommen automatisch die Kartenliste des Sets, dessen Name am längsten übereinstimmt (hier „30th Celebration“).
+
 ## Set-Symbole und Logos
 
 Standardmäßig an (abschaltbar unter Verwaltung → Darstellung). Kurz nach dem Start und danach täglich holt der Container, was die Datenquellen anbieten:
@@ -332,7 +350,9 @@ Standardmäßig an (abschaltbar unter Verwaltung → Darstellung). Kurz nach dem
 | Yu-Gi-Oh! | Produktbild des Sets | YGOPRODeck |
 | Flesh and Blood | Set-Logo, wo vorhanden | The FaB Cube |
 
-Für die übrigen Spiele liefern die Quellen keine Symbole. Die Dateien liegen unter `data/setbilder` (insgesamt nur wenige MB), werden nur einmal geladen und ausschließlich von deinem Server ausgeliefert. Symbole stehen vor dem Set-Namen, Logos rechts im Eintrag, in der Detailansicht und auf den Kartenseiten. Zusätzlich nötig ist ausgehender Zugriff auf `svgs.scryfall.io` und `dhhim4ltzu1pj.cloudfront.net`.
+Fehlt bei Pokémon das deutsche Logo oder Kartenbild, wird das englische verwendet. Für die übrigen Spiele liefern die Quellen keine Symbole.
+
+Im selben täglichen Lauf werden deutsche Set-Namen ergänzt, wo ein Termin noch keinen hat: Pokémon aus TCGdex, Magic aus MTGJSON (dort gepflegt bis etwa 2023, zusätzlich nötig: `mtgjson.com`). Für alle anderen Spiele trägst du den deutschen Namen in der Verwaltung beim Termin ein; die Claude-Recherche schlägt ihn ebenfalls vor. Eingetragene Namen werden nie überschrieben. Die Dateien liegen unter `data/setbilder` (insgesamt nur wenige MB), werden nur einmal geladen und ausschließlich von deinem Server ausgeliefert. Symbole stehen vor dem Set-Namen, Logos rechts im Eintrag, in der Detailansicht und auf den Kartenseiten. Zusätzlich nötig ist ausgehender Zugriff auf `svgs.scryfall.io` und `dhhim4ltzu1pj.cloudfront.net`.
 
 ## Automatische Recherche mit Claude (optional)
 

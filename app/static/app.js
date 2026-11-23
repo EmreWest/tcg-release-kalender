@@ -92,7 +92,7 @@ function passt(r) {
   if (!zustand.ungenau && r.genauigkeit !== "tag") return false;
   if (zustand.suche) {
     const q = zustand.suche.toLowerCase();
-    if (!`${r.name} ${r.code || ""} ${r.spiel_name}`.toLowerCase().includes(q)) return false;
+    if (!`${r.name} ${r.name_de || ""} ${r.code || ""} ${r.spiel_name}`.toLowerCase().includes(q)) return false;
   }
   return true;
 }
@@ -304,10 +304,14 @@ function pille(e, klasse = "") {
   const r = e.r;
   const unsicher = ["geruecht", "angekuendigt"].includes(r.status) ? " unsicher" : "";
   const abg = r.status === "abgesagt" ? " abgesagt" : "";
-  const titel = `${r.spiel_name}: ${e.pre ? "Prerelease " : ""}${r.name}`;
+  const titel = `${r.spiel_name}: ${e.pre ? "Prerelease " : ""}${setName(r)}${enName(r) ? ` (${enName(r)})` : ""}`;
   return `<button type="button" class="pille${e.pre ? " pre" : ""}${unsicher}${abg} ${klasse}" style="--c:${farbe(r.spiel_farbe)}"
-    data-r="${r.id}" title="${esc(titel)}"><span>${e.pre ? "Prerelease: " : ""}${esc(r.name)}</span></button>`;
+    data-r="${r.id}" title="${esc(titel)}"><span>${e.pre ? "Prerelease: " : ""}${esc(setName(r))}</span></button>`;
 }
+
+// Deutscher Name als Titel, englischer zusätzlich darunter
+function setName(r) { return r.name_de || r.name; }
+function enName(r) { return r.name_de && r.name_de.toLowerCase() !== r.name.toLowerCase() ? r.name : ""; }
 
 function setSymbol(r, klasse = "") {
   if (!r.symbol) return "";
@@ -331,7 +335,8 @@ function karte(e) {
     <div>
       <div class="titelzeile"><span class="spiel">${logo(r.spiel, "logo-titel")}${esc(r.spiel_name)}</span>
         <span class="badge ${r.status_effektiv}">${esc(META.status[r.status_effektiv])}</span>${markierung(r)}</div>
-      <div class="setzeile"><span class="name">${setSymbol(r)}${e.pre ? "Prerelease: " : ""}${esc(r.name)}</span>${r.code ? `<span class="code">${esc(r.code)}</span>` : ""}</div>
+      <div class="setzeile"><span class="name">${setSymbol(r)}${e.pre ? "Prerelease: " : ""}${esc(setName(r))}</span>${r.code ? `<span class="code">${esc(r.code)}</span>` : ""}</div>
+      ${enName(r) ? `<div class="name-en">${esc(enName(r))}</div>` : ""}
       <div class="meta">${meta.join("")}</div>
       ${r.notiz && !e.pre ? `<div class="notiz">${esc(r.notiz)}</div>` : ""}
     </div>
@@ -524,7 +529,7 @@ async function archivRendern() {
     html += `<button type="button" class="archiv-zeile" style="--c:${farbe(r.spiel_farbe)}" data-r="${r.id}">
       <span class="archiv-datum">${datum}</span>
       <span class="archiv-spiel">${logo(r.spiel, "logo-mini")}${esc(r.spiel_name)}</span>
-      <span class="archiv-name">${setSymbol(r)}${esc(r.name)}${r.code ? ` <span class="code">${esc(r.code)}</span>` : ""}${r.karten
+      <span class="archiv-name">${setSymbol(r)}${esc(setName(r))}${r.code ? ` <span class="code">${esc(r.code)}</span>` : ""}${enName(r) ? `<span class="name-en">${esc(enName(r))}</span>` : ""}${r.karten
         ? `<span class="archiv-karten" title="Kartenliste mit ${r.karten} Karten">${KARTEN_ICON}</span>` : ""}</span>
       <span class="archiv-typ">${esc(META.typen[r.typ] || r.typ)}</span>
     </button>`;
@@ -629,14 +634,16 @@ async function detailZeigen(id) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       <div class="detail-spiel">${logo(r.spiel, "logo-detail") || "<i></i>"}<span>${esc(r.spiel_name)}</span></div>
       ${r.logo ? `<img class="set-logo detail-logo" src="${esc(r.logo)}" alt="">` : ""}
-      <h2 id="detail-titel">${setSymbol(r, "titel")}${esc(r.name)}</h2>
+      <h2 id="detail-titel">${setSymbol(r, "titel")}${esc(setName(r))}</h2>
+      ${enName(r) ? `<div class="detail-en">Englisch: ${esc(enName(r))}</div>` : ""}
       <div class="detail-datum"><b>${esc(datumText)}</b>${ca ? "" : `<span class="countdown${n >= 0 && n <= 7 ? " bald" : ""}">${countdown(r.datum)}</span>`}</div>
       <table class="detail-tabelle">${zeilen.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("")}</table>
       ${r.notiz ? `<p class="detail-notiz">${esc(r.notiz)}</p>` : ""}
       <div class="detail-aktionen">
         <div class="links">
           <a class="knopf primaer" href="/release/${r.id}.ics" download>In meinen Kalender</a>
-          ${r.karten ? `<a class="knopf" href="/karten/${r.id}">${KARTEN_ICON} Kartenliste · ${r.karten.toLocaleString("de-DE")}</a>` : ""}
+          ${r.karten ? `<a class="knopf" href="/karten/${r.id}">${KARTEN_ICON} Kartenliste · ${r.karten.toLocaleString("de-DE")}</a>`
+            : (r.produkte ? `<a class="knopf" href="/karten/${r.id}">${KARTEN_ICON} Produkte · ${r.produkte}</a>` : "")}
           <button type="button" class="knopf" data-teilen>Link kopieren</button>
         </div>
         <button type="button" class="knopf" data-schliessen>Schließen</button>

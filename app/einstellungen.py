@@ -55,6 +55,8 @@ def standard() -> dict:
         "karten_spiele": [],
         # Set-Symbole und -Logos aus den Datenquellen laden und anzeigen
         "set_bilder": True,
+        # Preistrend und Link zu Cardmarket in den Kartenlisten
+        "cardmarket_preise": True,
     }
 
 
@@ -115,6 +117,8 @@ def aendern(daten: dict) -> dict:
         neu["quellen_aktiv"] = q
     if "set_bilder" in daten:
         neu["set_bilder"] = bool(daten["set_bilder"])
+    if "cardmarket_preise" in daten:
+        neu["cardmarket_preise"] = bool(daten["cardmarket_preise"])
     if "karten_spiele" in daten:
         k = daten["karten_spiele"]
         if not isinstance(k, list) or not all(isinstance(x, str) for x in k):

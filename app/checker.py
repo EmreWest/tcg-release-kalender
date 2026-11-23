@@ -40,6 +40,7 @@ Jedes Element:
   "daten": {{
     "spiel": "{spiel_id}",
     "name": "Set-Name (englisch bzw. offizieller Name)",
+    "name_de": "Name der deutschen Ausgabe, falls sie anders heißt, sonst null",
     "code": "Set-Code oder null",
     "typ": "hauptset" | "spezialset" | "deck" | "sonstiges",
     "datum": "YYYY-MM-DD (bei Monat/Quartal der erste Tag des Zeitraums)",

@@ -241,8 +241,8 @@ def tcgdex(ab: str, alle: bool = False) -> list[dict]:
             "typ": typ,
             "datum": d,
             "quelle": "https://tcgdex.dev/",
-            "notiz": f"Deutsche Ausgabe: „{name_de}“. Termin laut TCGdex." if name_de != name_en
-                     else "Termin laut TCGdex (deutsche Ausgabe).",
+            "notiz": "Termin laut TCGdex (deutsche Ausgabe).",
+            "name_de": name_de if name_de != name_en else None,
         })
     return sets
 
@@ -413,6 +413,7 @@ def abgleich(sets: list[dict], historie: bool = False, angleichen: bool = True) 
                 r = db.release(st["release_id"]) if st["release_id"] else None
                 if not r:
                     continue  # in der Verwaltung gelöscht: nicht wieder anlegen
+                db.name_de_ergaenzen(r["id"], s.get("name_de"))
                 if st["datum"] != s["datum"]:
                     # Termin hat sich in der Quelle geändert -> übernehmen (gilt automatisch als verschoben)
                     db.aendern(r["id"], {"datum": s["datum"], "genauigkeit": "tag"})
@@ -446,6 +447,7 @@ def abgleich(sets: list[dict], historie: bool = False, angleichen: bool = True) 
                 rid = db.anlegen(daten, protokoll=s["datum"] >= heute)
                 ergebnis["neu"] += 1
             verknuepft.add(rid)
+            db.name_de_ergaenzen(rid, s.get("name_de"))
             with db.verbindung() as con:
                 con.execute("INSERT INTO quellen_stand (extern_id, release_id, datum, name, gesehen) VALUES (?,?,?,?,?)",
                             (s["extern_id"], rid, s["datum"], s["name"], jetzt))
@@ -476,6 +478,7 @@ def verknuepfen(sets: list[dict]) -> int:
                         (s["extern_id"], r["id"], s["datum"], s["name"], db.jetzt()))
         bekannt.add(s["extern_id"])
         verknuepft.add(r["id"])
+        db.name_de_ergaenzen(r["id"], s.get("name_de"))
         neu += 1
     return neu
 

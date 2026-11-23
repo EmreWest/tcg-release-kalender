@@ -84,7 +84,7 @@ def feed(rows: list[dict], titel: str, host: str, mit_prerelease: bool, basis_ur
     ]
     for r in rows:
         status_txt = db.STATUS_FILTER[r["status_effektiv"]]
-        name = r["name"] + (f" ({r['code']})" if r.get("code") else "")
+        name = (r.get("name_de") or r["name"]) + (f" ({r['code']})" if r.get("code") else "")
         praefix = ""
         if r["status"] == "geruecht":
             praefix = "Gerücht: "
@@ -102,6 +102,8 @@ def feed(rows: list[dict], titel: str, host: str, mit_prerelease: bool, basis_ur
             f"Status: {status_txt}",
             f"Termin: {zeitraum_text(r)}",
         ]
+        if r.get("name_de") and r["name_de"] != r["name"]:
+            teile.insert(0, f"Englischer Name: {r['name']}")
         if r.get("prerelease"):
             teile.append(f"Prerelease: {date.fromisoformat(r['prerelease']).strftime('%d.%m.%Y')}")
         if r.get("vorheriges_datum") and r["status"] == "verschoben":

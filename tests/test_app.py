@@ -479,6 +479,8 @@ def _kartenquelle(monkeypatch, release_id):
         {"nummer": "3", "name": "Fremd", "bild_url": "https://boese.example.com/x.jpg"},
     ]
     monkeypatch.setattr(karten, "sets_verknuepfen", verknuepfen)
+    from app import produkte
+    monkeypatch.setattr(produkte, "laden", lambda *a: [])
     monkeypatch.setattr(karten, "LISTEN", {**karten.LISTEN, "scryfall": lambda kennung, name, kontext: liste})
     abrufe = []
     monkeypatch.setattr(karten, "_herunterladen", lambda url: abrufe.append(url) or _png())
@@ -598,6 +600,8 @@ def test_set_symbole_und_logos(client, monkeypatch):
     monkeypatch.setattr(setbilder, "_ygoprodeck", lambda: {})
     monkeypatch.setattr(setbilder, "_fabcube", lambda: {})
     monkeypatch.setattr(setbilder, "_tcgdex", lambda v, b: {})
+    monkeypatch.setattr(setbilder, "_deutsche_namen_magic", lambda: None)
+    monkeypatch.setattr(setbilder, "_deutsche_namen_pokemon", lambda: None)
     svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0h10v10z"/></svg>'
     abrufe = []
     monkeypatch.setattr(karten, "_herunterladen", lambda url: abrufe.append(url) or svg)
@@ -682,3 +686,135 @@ def test_anmeldung_sperre_nach_fehlversuchen(client, monkeypatch):
     for _ in range(m.FEHLVERSUCHE_MAX):
         assert client.post("/api/login", json={"benutzer": "admin", "passwort": "x"}, headers=H).status_code == 401
     assert client.post("/api/login", json={"benutzer": "admin", "passwort": ADMIN[1]}, headers=H).status_code == 429
+
+
+
+def test_wellen_teilen_kartenliste(client, monkeypatch):
+    from app import karten
+    basis = db.anlegen({"spiel": "pokemon", "name": "Testset Celebration", "datum": "2026-09-16", "typ": "spezialset"})
+    welle = db.anlegen({"spiel": "pokemon", "name": "Testset Celebration Premium (Welle 4)", "datum": "2026-11-06", "typ": "sonstiges"})
+    fremd = db.anlegen({"spiel": "pokemon", "name": "Anderes Set (Welle 2)", "datum": "2026-11-06", "typ": "sonstiges"})
+    monkeypatch.setattr(karten, "_herunterladen", lambda url: _png())
+    client.put("/api/admin/karten/pokemon", json={"aktiv": True}, auth=ADMIN, headers=H)
+    karten._liste_speichern(basis, "pokemon", "tcgdex:test", [{"nummer": "1", "name": "Pikachu"}, {"nummer": "2", "name": "Evoli"}])
+    assert client.get(f"/api/releases/{welle}").json()["karten"] == 2
+    assert "karten" not in client.get(f"/api/releases/{fremd}").json()
+    d = client.get(f"/api/karten/{welle}").json()
+    assert d["release"]["name"].endswith("(Welle 4)") and len(d["karten"]) == 2
+    # In der Übersicht steht die Liste nur einmal
+    assert [x["id"] for x in client.get("/api/kartenlisten").json()["sets"]] == [basis]
+
+
+def test_deutscher_name(client):
+    rid = db.anlegen({"spiel": "pokemon", "name": "Surging Sparks", "name_de": "Stürmische Funken", "datum": "2024-11-08"})
+    r = client.get(f"/api/releases/{rid}").json()
+    assert r["name_de"] == "Stürmische Funken" and r["name"] == "Surging Sparks"
+    assert any(x.get("name_de") == "Stürmische Funken" for x in client.get("/api/archiv?spiele=pokemon").json()["releases"])
+    ics = client.get(f"/release/{rid}.ics").text
+    assert "SUMMARY:[Pokémon] Stürmische Funken" in ics and "Englischer Name: Surging Sparks" in ics
+    # Aus Datenquellen nur ergänzen, nie überschreiben
+    assert not db.name_de_ergaenzen(rid, "Etwas anderes")
+    rid2 = db.anlegen({"spiel": "magic", "name": "Bloomburrow", "datum": "2024-08-02"})
+    assert not db.name_de_ergaenzen(rid2, "Bloomburrow")  # gleicher Name wird nicht doppelt eingetragen
+    assert db.name_de_ergaenzen(rid2, "Bloomburrow (DE)")
+    # Verwaltung kann ihn setzen und wieder leeren
+    client.put(f"/api/admin/releases/{rid}", json={"name_de": ""}, auth=ADMIN, headers=H)
+    assert client.get(f"/api/releases/{rid}").json()["name_de"] is None
+
+
+def test_deutscher_name_migration(tmp_path, monkeypatch):
+    import sqlite3
+    pfad = tmp_path / "alt.db"
+    monkeypatch.setattr(db, "DB_PFAD", str(pfad))
+    db.init()
+    with db.verbindung() as con:
+        con.execute("UPDATE releases SET notiz = 'Deutsche Ausgabe: „Prismatische Entwicklungen“. Termin laut TCGdex.' "
+                    "WHERE id = (SELECT MIN(id) FROM releases)")
+        con.execute("ALTER TABLE releases DROP COLUMN name_de")
+    db.init()
+    r = db.release(min(x["id"] for x in db.releases(von="1900-01-01")))
+    assert r["name_de"] == "Prismatische Entwicklungen" and r["notiz"] == "Termin laut TCGdex (deutsche Ausgabe)."
+
+
+def test_cardmarket_zuordnung_und_preise(client, monkeypatch):
+    from app import karten, preise
+    rid = db.anlegen({"spiel": "onepiece", "name": "Testbooster", "datum": "2026-01-01"})
+    client.put("/api/admin/karten/onepiece", json={"aktiv": True}, auth=ADMIN, headers=H)
+    karten._liste_speichern(rid, "onepiece", "tcgcsv:1", [
+        {"nummer": "OP90-001", "name": "Ruffy"},
+        {"nummer": "OP90-002", "name": "Zorro"},
+        {"nummer": "OP90-002", "name": "Zorro (Parallel)"},
+        {"nummer": "OP13-012", "name": "Nami (SP)"},
+        {"nummer": "OP90-003", "name": "Unbekannt"},
+    ])
+    produkte = [
+        {"idProduct": 1, "name": "Ruffy (OP90-001)", "idExpansion": 9},
+        {"idProduct": 2, "name": "Zorro (OP90-002)", "idExpansion": 9},
+        {"idProduct": 3, "name": "Zorro (OP90-002)", "idExpansion": 9},
+        {"idProduct": 4, "name": "Nami (OP13-012)", "idExpansion": 9},
+        {"idProduct": 5, "name": "Nami (OP13-012)", "idExpansion": 7},
+        {"idProduct": 6, "name": "Ruffy (OP90-001)", "idExpansion": 7},
+    ]
+    preisliste = [{"idProduct": 1, "trend": 1.5, "avg30": 1.7, "low": 1.0}, {"idProduct": 2, "trend": 0.2},
+                  {"idProduct": 3, "trend": 40.0}, {"idProduct": 4, "trend": 12.0}]
+    monkeypatch.setattr(preise, "_laden", lambda url: {"products": produkte if "singles_" in url and "nonsingles" not in url else []}
+                        if "productList" in url else {"priceGuides": preisliste})
+    preise.aktualisieren()
+    k = {x["name"]: x.get("cardmarket") for x in client.get(f"/api/karten/{rid}").json()["karten"]}
+    assert k["Ruffy"]["trend"] == 1.5 and k["Ruffy"]["url"].endswith("/de/OnePiece/Products?idProduct=1")
+    assert k["Zorro"]["von"] == 0.2 and k["Zorro"]["bis"] == 40.0 and "Search?searchString=Zorro" in k["Zorro"]["url"]
+    assert k["Zorro (Parallel)"]["versionen"] == 2
+    assert k["Nami (SP)"]["trend"] == 12.0  # einzige Version in dieser Erweiterung = die SP-Version
+    assert "trend" not in k["Unbekannt"] and "Search" in k["Unbekannt"]["url"]
+    # Ausschalten blendet die Preise aus
+    client.put("/api/admin/einstellungen", json={"cardmarket_preise": False}, auth=ADMIN, headers=H)
+    assert all("cardmarket" not in x for x in client.get(f"/api/karten/{rid}").json()["karten"])
+
+
+def test_cardmarket_nummern():
+    from app import preise
+    assert preise._nummer("BT06-011") == preise._nummer("BT6-011") == preise._nummer("BT6-11 R")
+    assert preise._nummer("1-001H") == preise._nummer_aus_cm("Auron (1-001)")
+    assert preise._nummer_aus_cm("Tien Shinhan (FB05-010) [Fusion World]") == preise._nummer("FB05-010")
+    assert preise._schluessel_unser("fab", {"name": "Head Jab (Blau)"}) == preise._schluessel_cm("fab", "Head Jab (Blue)")
+    assert preise._schluessel_unser("swu", {"name": "Luke – Jedi"}) == preise._schluessel_cm("swu", "Luke, Jedi")
+
+
+
+def test_versiegelte_produkte(client, monkeypatch):
+    from app import karten, preise, produkte
+    tcg = [
+        {"productId": 1, "name": "Surging Sparks Booster Box", "imageUrl": "https://tcgplayer-cdn.tcgplayer.com/product/1_200w.jpg", "extendedData": []},
+        {"productId": 2, "name": "Surging Sparks Elite Trainer Box", "imageUrl": "https://tcgplayer-cdn.tcgplayer.com/product/2_200w.jpg", "extendedData": []},
+        {"productId": 3, "name": "Surging Sparks Booster Box Case", "extendedData": []},
+        {"productId": 4, "name": "Code Card - Surging Sparks Booster Pack", "extendedData": []},
+        {"productId": 5, "name": "Surging Sparks 3 Pack Blisters [Zapdos]", "extendedData": []},
+        {"productId": 6, "name": "Pikachu", "extendedData": [{"name": "Number", "value": "001"}]},
+    ]
+    s = produkte.sealed(tcg)
+    assert [p["name"] for p in s] == ["Surging Sparks Booster Box", "Surging Sparks Elite Trainer Box", "Surging Sparks 3 Pack Blisters [Zapdos]"]
+    assert produkte.name_deutsch("Surging Sparks Elite Trainer Box", "Surging Sparks", "Stürmische Funken") == "Stürmische Funken Top-Trainer-Box"
+    assert produkte.name_deutsch("Surging Sparks Booster Box", "Surging Sparks", None) == "Surging Sparks Display"
+    assert produkte.name_deutsch("Surging Sparks 3 Pack Blisters [Zapdos]", "Surging Sparks", "Stürmische Funken") == "Stürmische Funken 3er-Blister Zapdos"
+    assert produkte.name_deutsch("Pokemon Day Collection", "Surging Sparks", "Stürmische Funken") is None
+
+    rid = db.anlegen({"spiel": "pokemon", "name": "Surging Sparks", "name_de": "Stürmische Funken", "datum": "2024-11-08"})
+    client.put("/api/admin/karten/pokemon", json={"aktiv": True}, auth=ADMIN, headers=H)
+    produkte.speichern(rid, "pokemon", s)
+    monkeypatch.setattr(karten, "_herunterladen", lambda url: _png())
+    karten._bilder_laden("pokemon")
+    cm = [{"idProduct": 11, "name": "Surging Sparks Booster Box", "idExpansion": 5}, {"idProduct": 12, "name": "Surging Sparks: Zapdos 3-Pack Blister", "idExpansion": 5},
+          {"idProduct": 13, "name": "Surging Sparks Elite Trainer Box", "idExpansion": 5}, {"idProduct": 14, "name": "Other Set Booster Box", "idExpansion": 6}]
+    monkeypatch.setattr(preise, "_laden", lambda url: ({"products": cm if "nonsingles" in url else []} if "productList" in url
+                                                     else {"priceGuides": [{"idProduct": 11, "trend": 149.9}, {"idProduct": 12, "trend": 19.5}]}))
+    preise.aktualisieren()
+    assert client.get(f"/api/releases/{rid}").json()["produkte"] == 3
+    d = client.get(f"/api/karten/{rid}").json()
+    assert d["karten"] == [] and len(d["produkte"]) == 3
+    p = {x["name"]: x for x in d["produkte"]}
+    assert p["Stürmische Funken Display"]["cardmarket"]["trend"] == 149.9 and p["Stürmische Funken Display"]["bild"]
+    assert p["Stürmische Funken 3er-Blister Zapdos"]["cardmarket"]["trend"] == 19.5
+    assert p["Stürmische Funken Top-Trainer-Box"]["name_en"] == "Surging Sparks Elite Trainer Box"
+    # Aufräumen lässt Produktbilder stehen
+    karten._aufraeumen("pokemon")
+    assert client.get(p["Stürmische Funken Display"]["bild"]).status_code == 200

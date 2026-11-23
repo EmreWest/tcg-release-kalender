@@ -77,6 +77,13 @@
       <div id="karten-liste" style="margin-top:12px"></div>
       <div id="karten-gesamt" class="hinweis"></div>
     </div>
+    <div class="flaeche karte-innen">
+      <h2>Cardmarket-Preise</h2>
+      <label class="schalter"><input type="checkbox" id="cm-aktiv"> Preistrend und Link zu Cardmarket bei jeder Karte anzeigen</label>
+      <div id="cm-text" class="hinweis" style="font-size:14px"></div>
+      <div class="zeile" style="margin-top:10px"><button class="knopf" id="cm-los" type="button">Preise jetzt abrufen</button></div>
+      <p class="hinweis">Cardmarket veröffentlicht den Preisführer täglich als freie Datei. Der Container lädt ihn einmal am Tag für die freigeschalteten Spiele und ordnet die Karten zu (Magic und Pokémon über die Produktnummer der Quelle, sonst über Erweiterung, Nummer und Name). Gibt es mehrere Versionen einer Karte, steht die Preisspanne da und der Link führt zur Cardmarket-Suche. Für Union Arena, Shadowverse: Evolve, hololive und Grand Archive führt Cardmarket keine Einzelkarten, für Weiß Schwarz nur ältere Sets.</p>
+    </div>
   </section>
 
   <section id="tab-import" hidden>
@@ -206,7 +213,8 @@
     <h2 style="margin-top:0" id="dlg-titel">Termin</h2>
     <div class="formular">
       <label>Spiel<select name="spiel" required></select></label>
-      <label class="breit">Name<input name="name" required></label>
+      <label class="breit">Name (englisch bzw. international)<input name="name" required></label>
+      <label class="breit">Deutscher Name (wird als Titel angezeigt, leer lassen, wenn identisch)<input name="name_de"></label>
       <label>Set-Code<input name="code"></label>
       <label>Produkttyp<select name="typ"></select></label>
       <label>Datum<input name="datum" type="date" required></label>
@@ -227,7 +235,7 @@
 
 <script>
 let META, TERMINE = [], SPIELE = [], dlgAktion = null;
-const FELDER = ["spiel","name","code","typ","datum","genauigkeit","prerelease","status","notiz","quelle"];
+const FELDER = ["spiel","name","name_de","code","typ","datum","genauigkeit","prerelease","status","notiz","quelle"];
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const fmt = iso => iso ? new Date(iso + "T12:00:00").toLocaleDateString("de-DE") : "–";
 const heuteIso = () => new Date().toISOString().slice(0, 10);
@@ -250,7 +258,7 @@ document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
   document.querySelectorAll("[data-tab]").forEach(x => x.setAttribute("aria-selected", x === b));
   document.querySelectorAll("section[id^=tab-]").forEach(s => s.hidden = s.id !== "tab-" + b.dataset.tab);
   if (b.dataset.tab === "system") ladeStatus();
-  if (b.dataset.tab === "karten") ladeKarten();
+  if (b.dataset.tab === "karten") { ladeKarten(); ladeCardmarket(); }
   if (["darstellung", "system", "rechtliches"].includes(b.dataset.tab)) ladeEinstellungen();
 });
 
@@ -319,14 +327,14 @@ function renderTermine() {
   const sp = document.getElementById("termine-spiel").value;
   const alt = document.getElementById("termine-alt").checked;
   const grenze = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-  const rows = TERMINE.filter(r => (!q || (r.name + " " + r.spiel_name + " " + (r.code || "")).toLowerCase().includes(q))
+  const rows = TERMINE.filter(r => (!q || (r.name + " " + (r.name_de || "") + " " + r.spiel_name + " " + (r.code || "")).toLowerCase().includes(q))
     && (!sp || r.spiel === sp) && (alt || r.datum >= grenze || r.genauigkeit !== "tag"));
   const max = 400;
   const gekuerzt = rows.length > max;
   document.getElementById("termine").innerHTML = rows.length ? rows.slice(0, max).map(r => `<tr>
     <td style="white-space:nowrap">${fmt(r.datum)}${r.genauigkeit !== "tag" ? ` <span class="hinweis">(${esc(META.genauigkeit[r.genauigkeit])})</span>` : ""}</td>
     <td><span class="farbfeld" style="--c:${esc(r.spiel_farbe)}"></span> ${esc(r.spiel_name)}</td>
-    <td>${esc(r.name)}${r.code ? ` <span class="hinweis">${esc(r.code)}</span>` : ""}</td>
+    <td>${esc(r.name_de || r.name)}${r.code ? ` <span class="hinweis">${esc(r.code)}</span>` : ""}${r.name_de ? `<div class="hinweis" style="margin:0">${esc(r.name)}</div>` : ""}</td>
     <td>${esc(META.typen[r.typ])}</td>
     <td><span class="badge ${r.status_effektiv}">${esc(META.status[r.status_effektiv])}</span></td>
     <td style="white-space:nowrap;text-align:right"><button class="knopf" data-bearb="${r.id}">Bearbeiten</button>
@@ -630,6 +638,27 @@ document.getElementById("sb-los").onclick = async () => {
 const groesse = b => b >= 1e9 ? (b / 1e9).toLocaleString("de-DE", { maximumFractionDigits: 1 }) + " GB"
   : (b / 1e6).toLocaleString("de-DE", { maximumFractionDigits: b < 1e7 ? 1 : 0 }) + " MB";
 const zahl = n => Number(n || 0).toLocaleString("de-DE");
+async function ladeCardmarket() {
+  const [p, e] = await Promise.all([api("/api/admin/preise"), api("/api/admin/einstellungen")]);
+  document.getElementById("cm-aktiv").checked = e.cardmarket_preise;
+  const stand = Object.entries(p.stand || {});
+  document.getElementById("cm-text").innerHTML = !p.aktiv ? "Ausgeschaltet."
+    : (p.laeuft ? "<strong>Preise werden abgerufen …</strong>"
+      : (stand.length ? stand.map(([sp, v]) => `${esc(spielName(sp))}: ${zahl(v.eindeutig)} Karten mit Preis, ${zahl(v.mehrdeutig)} mit mehreren Versionen · ${new Date(v.zeit).toLocaleString("de-DE")}`).join("<br>")
+        : "Noch nicht abgerufen – startet kurz nach dem Start des Containers für alle Spiele mit Kartenlisten."));
+  document.getElementById("cm-los").disabled = !p.aktiv || p.laeuft;
+  clearTimeout(ladeCardmarket.t);
+  if (p.laeuft) ladeCardmarket.t = setTimeout(() => { ladeCardmarket(); ladeKarten(); }, 3000);
+}
+document.getElementById("cm-aktiv").onchange = async (e) => {
+  try { await api("/api/admin/einstellungen", { method: "PUT", body: JSON.stringify({ cardmarket_preise: e.target.checked }) });
+    toast("Gespeichert"); ladeCardmarket(); } catch (err) { toast(err.message); }
+};
+document.getElementById("cm-los").onclick = async () => {
+  try { const r = await api("/api/admin/preise", { method: "POST" }); toast(r.gestartet ? "Abruf gestartet" : r.meldung); setTimeout(ladeCardmarket, 400); }
+  catch (e) { toast(e.message); }
+};
+
 async function ladeKarten() {
   let d;
   try { d = await api("/api/admin/karten"); } catch (e) { toast(e.message); return; }
@@ -656,6 +685,7 @@ async function ladeKarten() {
       info = `${zahl(s.sets_mit_liste)} von ${zahl(s.sets_verknuepft)} Sets · ${zahl(s.karten)} Karten · ${zahl(s.bilder_lokal)} Bilder (${groesse(s.bytes || 0)})`;
       const offen = s.bilder_gesamt - s.bilder_lokal - s.bilder_fehlen;
       if (offen > 0) info += ` · ${zahl(offen)} Bilder ausstehend`;
+      if (s.preise_eindeutig || s.preise_mehrdeutig) info += ` · Preise für ${zahl(s.preise_eindeutig + s.preise_mehrdeutig)} Karten`;
     }
     let stand = "";
     if (s.stand && s.stand.pausiert) stand = "Abgebrochen – „" + (hatDaten ? "Aktualisieren" : "Daten abrufen") + "“ macht an derselben Stelle weiter";

@@ -16,7 +16,8 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import atom, checker, db, einstellungen, ics, karten, logos, notify, quellen, rechtliches, setbilder
+from . import atom, checker, db, einstellungen, ics, karten, logos, notify, preise, quellen, rechtliches, setbilder
+from . import produkte as produkte_modul
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("tcg-kalender")
@@ -52,6 +53,7 @@ async def lifespan(_app: FastAPI):
     quellen.starte_hintergrund()
     karten.starte_hintergrund()
     setbilder.starte_hintergrund()
+    preise.starte_hintergrund()
     yield
 
 
@@ -294,10 +296,13 @@ def _mit_karten(rows: list[dict]) -> list[dict]:
     """Ergänzt Set-Symbol und -Logo sowie die Anzahl der Karten, wenn für das Spiel Kartenlisten freigeschaltet sind."""
     anzahl = karten.anzahlen()
     bilder = setbilder.zuordnung()
-    if anzahl or bilder:
+    produkte = produkte_modul.anzahlen(karten.freigeschaltet())
+    if anzahl or bilder or produkte:
         for r in rows:
             if anzahl.get(r["id"]):
                 r["karten"] = anzahl[r["id"]]
+            if produkte.get(r["id"]):
+                r["produkte"] = produkte[r["id"]]
             if r["id"] in bilder:
                 r.update(bilder[r["id"]])
     return rows
@@ -329,7 +334,7 @@ def api_karten(rid: int):
 @app.get("/api/kartenlisten")
 def api_kartenlisten():
     """Alle Sets mit Kartenliste (nur freigeschaltete Spiele), neueste zuerst."""
-    anzahl = karten.anzahlen()
+    anzahl = karten.anzahlen(eigene_nur=True)  # jede Liste nur einmal, auch wenn es mehrere Wellen gibt
     if not anzahl:
         return {"spiele": [], "sets": []}
     felder = ("id", "spiel", "name", "code", "typ", "datum", "genauigkeit")
@@ -552,6 +557,21 @@ def admin_setbilder_abrufen(_=Depends(admin)):
     if setbilder.status["laeuft"]:
         return {"gestartet": False, "meldung": "Läuft bereits."}
     threading.Thread(target=setbilder.abgleichen, daemon=True).start()
+    return {"gestartet": True}
+
+
+@app.get("/api/admin/preise")
+def admin_preise(_=Depends(admin)):
+    return preise.info()
+
+
+@app.post("/api/admin/preise")
+def admin_preise_abrufen(_=Depends(admin)):
+    if not preise.aktiv():
+        raise HTTPException(400, "Cardmarket-Preise sind ausgeschaltet")
+    if preise.status["laeuft"]:
+        return {"gestartet": False, "meldung": "Läuft bereits."}
+    threading.Thread(target=preise.aktualisieren, daemon=True).start()
     return {"gestartet": True}
 
 

@@ -32,7 +32,7 @@ TYPEN = {
 
 GENAUIGKEIT = {"tag": "Tag", "monat": "Monat", "quartal": "Quartal"}
 
-FELDER = ["spiel", "name", "code", "typ", "datum", "genauigkeit", "prerelease",
+FELDER = ["spiel", "name", "name_de", "code", "typ", "datum", "genauigkeit", "prerelease",
           "status", "notiz", "quelle"]
 
 # Felder, deren Änderung im Änderungsprotokoll und in Benachrichtigungen erscheint
@@ -112,7 +112,10 @@ CREATE TABLE IF NOT EXISTS karten (
     seltenheit TEXT,
     art TEXT,
     variante TEXT,
-    bild_url TEXT
+    bild_url TEXT,
+    cm_quelle INTEGER,
+    cm_id INTEGER,
+    cm_kandidaten TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_karten_release ON karten(release_id, pos);
 CREATE INDEX IF NOT EXISTS idx_karten_spiel_bild ON karten(spiel, bild_url);
@@ -135,6 +138,37 @@ CREATE TABLE IF NOT EXISTS setbilder (
     logo_datei TEXT,
     geprueft TEXT
 );
+CREATE TABLE IF NOT EXISTS cm_produkte (
+    id INTEGER PRIMARY KEY,
+    spiel TEXT NOT NULL,
+    name TEXT NOT NULL,
+    expansion INTEGER,
+    art TEXT NOT NULL DEFAULT 'einzel'
+);
+CREATE TABLE IF NOT EXISTS setprodukte (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    release_id INTEGER NOT NULL,
+    spiel TEXT NOT NULL,
+    pos INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    name_de TEXT,
+    tcg_id INTEGER,
+    bild_url TEXT,
+    cm_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_setprodukte_release ON setprodukte(release_id, pos);
+CREATE INDEX IF NOT EXISTS idx_cm_produkte_spiel ON cm_produkte(spiel);
+CREATE TABLE IF NOT EXISTS cm_preise (
+    id INTEGER PRIMARY KEY,
+    spiel TEXT NOT NULL,
+    trend REAL,
+    avg30 REAL,
+    avg7 REAL,
+    low REAL,
+    trend_foil REAL,
+    avg30_foil REAL
+);
+CREATE INDEX IF NOT EXISTS idx_cm_preise_spiel ON cm_preise(spiel);
 CREATE TABLE IF NOT EXISTS meta (
     schluessel TEXT PRIMARY KEY,
     wert TEXT
@@ -171,6 +205,22 @@ def init():
         spalten = {r["name"] for r in con.execute("PRAGMA table_info(spiele)")}
         if "logo" not in spalten:
             con.execute("ALTER TABLE spiele ADD COLUMN logo TEXT")
+        # Migration: deutscher Set-Name zusätzlich zum englischen
+        if "name_de" not in {r["name"] for r in con.execute("PRAGMA table_info(releases)")}:
+            con.execute("ALTER TABLE releases ADD COLUMN name_de TEXT")
+            # Deutsche Pokémon-Namen standen bisher nur in der Notiz („Deutsche Ausgabe: „…““)
+            for r in con.execute("SELECT id, notiz FROM releases WHERE notiz LIKE 'Deutsche Ausgabe: „%'").fetchall():
+                m = re.match(r"Deutsche Ausgabe: „(.+?)“", r["notiz"] or "")
+                if m:
+                    con.execute("UPDATE releases SET name_de = ?, notiz = ? WHERE id = ?",
+                                (m.group(1), "Termin laut TCGdex (deutsche Ausgabe).", r["id"]))
+        # Migration: Cardmarket-Zuordnung der Karten
+        if "art" not in {r["name"] for r in con.execute("PRAGMA table_info(cm_produkte)")}:
+            con.execute("ALTER TABLE cm_produkte ADD COLUMN art TEXT NOT NULL DEFAULT 'einzel'")
+        spalten = {r["name"] for r in con.execute("PRAGMA table_info(karten)")}
+        for spalte in ("cm_quelle", "cm_id", "cm_kandidaten"):
+            if spalte not in spalten:
+                con.execute(f"ALTER TABLE karten ADD COLUMN {spalte} {'TEXT' if spalte == 'cm_kandidaten' else 'INTEGER'}")
         leer = con.execute("SELECT COUNT(*) FROM spiele").fetchone()[0] == 0
     if not os.path.exists(SEED_PFAD):
         return
@@ -248,10 +298,10 @@ def effektiver_status(r: dict) -> str:
 
 def _bereinigen(daten: dict) -> dict:
     d = {k: daten.get(k) for k in FELDER if k in daten}
-    for k in ("code", "prerelease", "notiz", "quelle"):
+    for k in ("name_de", "code", "prerelease", "notiz", "quelle"):
         if k in d and (d[k] is None or str(d[k]).strip() == ""):
             d[k] = None
-    for k in ("name", "code", "notiz", "quelle"):
+    for k in ("name", "name_de", "code", "notiz", "quelle"):
         if isinstance(d.get(k), str):
             d[k] = d[k].strip()
     if "status" in d and d["status"] not in STATUS:
@@ -375,7 +425,7 @@ def releases(spiele_filter=None, status_filter=None, typen_filter=None,
 def archiv(spiele_filter=None, typen_filter=None) -> list[dict]:
     """Vergangene Releases (erschienen), neueste zuerst, mit den für das Archiv nötigen Feldern."""
     heute = date.today().isoformat()
-    sql = ("SELECT r.id, r.spiel, r.name, r.code, r.typ, r.datum, r.genauigkeit, r.status "
+    sql = ("SELECT r.id, r.spiel, r.name, r.name_de, r.code, r.typ, r.datum, r.genauigkeit, r.status "
            "FROM releases r JOIN spiele s ON s.id = r.spiel "
            "WHERE r.status NOT IN ('geruecht', 'abgesagt') AND r.datum < ?")
     args: list = [heute]
@@ -483,6 +533,7 @@ def loeschen(rid: int):
         con.execute("DELETE FROM karten WHERE release_id = ?", (rid,))
         con.execute("DELETE FROM kartenlisten WHERE release_id = ?", (rid,))
         con.execute("DELETE FROM setbilder WHERE release_id = ?", (rid,))
+        con.execute("DELETE FROM setprodukte WHERE release_id = ?", (rid,))
     _protokoll("geloescht", alt)
 
 
@@ -562,6 +613,16 @@ def vorschlag_entscheiden(vid: int, uebernehmen: bool, daten_override: dict | No
     with verbindung() as con:
         con.execute("UPDATE vorschlaege SET status = ? WHERE id = ?",
                     ("uebernommen" if uebernehmen else "abgelehnt", vid))
+
+
+def name_de_ergaenzen(rid: int, name_de: str | None) -> bool:
+    """Setzt den deutschen Namen aus einer Datenquelle, aber nur, wenn noch keiner eingetragen ist."""
+    if not name_de:
+        return False
+    with verbindung() as con:
+        cur = con.execute("UPDATE releases SET name_de = ? WHERE id = ? AND (name_de IS NULL OR name_de = '') "
+                          "AND lower(name) != lower(?)", (name_de.strip(), rid, name_de.strip()))
+        return cur.rowcount > 0
 
 
 def meta_get(k: str) -> str | None:

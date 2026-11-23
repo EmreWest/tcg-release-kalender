@@ -60,7 +60,7 @@ function urlSchreiben() {
 
 function rendern() {
   const q = normal($("#u-suche").value.trim());
-  const treffer = DATEN.sets.filter((r) => (!gewaehlt || r.spiel === gewaehlt) && (!q || normal(`${r.name} ${r.code}`).includes(q)));
+  const treffer = DATEN.sets.filter((r) => (!gewaehlt || r.spiel === gewaehlt) && (!q || normal(`${r.name} ${r.name_de || ""} ${r.code}`).includes(q)));
   $("#u-zahl").textContent = `${treffer.length.toLocaleString("de-DE")} Sets`;
   let html = "", jahr = "";
   for (const r of treffer.slice(0, anzahl)) {
@@ -71,7 +71,8 @@ function rendern() {
       <span class="kachel-bild">${bild(r)}</span>
       <span class="kachel-text">
         <span class="kachel-spiel">${esc(sp.name || r.spiel)}</span>
-        <span class="kachel-name">${r.symbol && r.logo ? `<img class="set-symbol${r.symbol_mono ? " mono" : ""}" src="${esc(r.symbol)}" alt="">` : ""}${esc(r.name)}</span>
+        <span class="kachel-name">${r.symbol && r.logo ? `<img class="set-symbol${r.symbol_mono ? " mono" : ""}" src="${esc(r.symbol)}" alt="">` : ""}${esc(r.name_de || r.name)}</span>
+        ${r.name_de && r.name_de !== r.name ? `<span class="kachel-en">${esc(r.name)}</span>` : ""}
         <span class="kachel-meta">${esc(datumText(r))}${r.code ? ` · ${esc(r.code)}` : ""} · ${r.karten.toLocaleString("de-DE")} ${r.karten === 1 ? "Karte" : "Karten"}</span>
       </span>
     </a>`;
