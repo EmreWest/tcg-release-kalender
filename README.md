@@ -304,7 +304,7 @@ Speicherung und Aktualisierung:
 
 - Listen liegen in der Datenbank, Bilder als WebP (400 px breit) unter `data/karten/`. Beides überlebt Neustarts, `docker compose pull` und neue Container.
 - Jedes Bild wird genau einmal geladen. Besucher laden Bilder nur von deinem Server, nie von fremden.
-- Automatisch (alle `KARTEN_INTERVALL_STUNDEN`) werden nur die Listen neuer und kommender Sets aktualisiert – dort kommen während der Spoiler-Phase laufend Karten dazu – und fehlende Bilder ergänzt. „Alle Listen neu“ lädt bei Bedarf auch ältere Listen neu, vorhandene Bilder bleiben.
+- Automatisch (alle `KARTEN_INTERVALL_STUNDEN`) werden nur die Listen neuer und kommender Sets aktualisiert – dort kommen während der Spoiler-Phase laufend Karten dazu – und fehlende Bilder ergänzt. „Alle Listen neu“ lädt bei Bedarf auch ältere Listen neu, vorhandene Bilder bleiben. Wird der Container währenddessen neu gestartet, geht der Lauf danach mit den noch nicht erneuerten Sets weiter.
 - Wird ein Container mitten im ersten Abruf neu gestartet, geht es nach etwa zwei Minuten automatisch weiter. Nach einem Abbruch in der Verwaltung geht es erst mit einem erneuten Klick weiter.
 - Ausschalten blendet alles aus, die Daten bleiben erhalten. „Löschen“ entfernt Listen und Bilder des Spiels vollständig.
 
@@ -352,7 +352,7 @@ Standardmäßig an (abschaltbar unter Verwaltung → Darstellung). Kurz nach dem
 | Spiel | Was | Quelle |
 |---|---|---|
 | Magic: The Gathering | Set-Symbol (SVG, im dunklen Design hell dargestellt) | Scryfall |
-| Pokémon | Set-Logo, Set-Symbol sofern TCGdex es bereitstellt | TCGdex |
+| Pokémon | Set-Logo (deutsch, sonst englisch), Set-Symbol, sofern TCGdex es bereitstellt | TCGdex |
 | Yu-Gi-Oh! | Produktbild des Sets | YGOPRODeck |
 | Flesh and Blood | Set-Logo, wo vorhanden | The FaB Cube |
 

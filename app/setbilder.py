@@ -97,9 +97,12 @@ def _tcgdex(verknuepft: set[str], bekannt: dict) -> dict:
                 pass
             time.sleep(0.1)
         en = englisch.get(s["id"]) or {}
-        symbol, logo = symbol or en.get("symbol"), logo or en.get("logo")
-        if symbol or logo:
-            ergebnis[eid] = {"symbol": f"{symbol}.webp" if symbol else None, "logo": f"{logo}.webp" if logo else None}
+        # Kandidaten in Reihenfolge: deutsch vor englisch, WebP vor PNG. TCGdex nennt manchmal eine
+        # Adresse, unter der nur eines der Formate liegt (z. B. deutsches Logo nur als PNG).
+        symbole = [f"{u}.{e}" for u in dict.fromkeys(x for x in (symbol, en.get("symbol")) if x) for e in ("webp", "png")]
+        logos_ = [f"{u}.{e}" for u in dict.fromkeys(x for x in (logo, en.get("logo")) if x) for e in ("webp", "png")]
+        if symbole or logos_:
+            ergebnis[eid] = {"symbol": symbole or None, "logo": logos_ or None}
     return ergebnis
 
 
@@ -218,21 +221,32 @@ def abgleichen() -> str:
         neu = fehler = 0
         for rid, (eid, k) in je_release.items():
             alt = bisher.get(rid) or {}
-            zeile = {"symbol_url": k.get("symbol"), "logo_url": k.get("logo"), "symbol_mono": 1 if k.get("mono") else 0}
+            zeile = {"symbol_mono": 1 if k.get("mono") else 0}
             versucht = not alt
             for art in ("symbol", "logo"):
-                url, datei = zeile[f"{art}_url"], None
-                if url and url == alt.get(f"{art}_url") and alt.get(f"{art}_datei") and pfad(alt[f"{art}_datei"]):
-                    datei = alt[f"{art}_datei"]
-                elif url and (url != alt.get(f"{art}_url") or (alt.get("geprueft") or "") < grenze):
+                wert = k.get(art)
+                kandidaten_art = [u for u in (wert if isinstance(wert, list) else [wert]) if u]
+                url, datei = (kandidaten_art[0] if kandidaten_art else None), None
+                alt_url = alt.get(f"{art}_url")
+                if alt_url in kandidaten_art and alt.get(f"{art}_datei") and pfad(alt[f"{art}_datei"]):
+                    url, datei = alt_url, alt[f"{art}_datei"]
+                elif kandidaten_art and (alt_url not in kandidaten_art or alt.get(f"{art}_datei")
+                                         or alt_url != kandidaten_art[-1]  # noch nicht alle Kandidaten probiert
+                                         or (alt.get("geprueft") or "") < grenze):
                     versucht = True
-                    try:
-                        datei = _speichern(url, art)
-                        neu += 1
-                    except Exception as e:  # noqa: BLE001
+                    for kandidat in kandidaten_art:  # erster, der sich laden lässt
+                        try:
+                            url, datei = kandidat, _speichern(kandidat, art)
+                            neu += 1
+                            break
+                        except Exception as e:  # noqa: BLE001
+                            log.debug("Set-Bild %s: %s", kandidat, e)
+                    else:
                         fehler += 1
-                        log.debug("Set-Bild %s: %s", url, e)
-                zeile[f"{art}_datei"] = datei
+                        url = kandidaten_art[-1]  # alle probiert – erst nach NEU_VERSUCHEN_TAGE wieder
+                elif alt_url in kandidaten_art:
+                    url = alt_url
+                zeile[f"{art}_url"], zeile[f"{art}_datei"] = url, datei
             with db.verbindung() as con:
                 con.execute(
                     "INSERT INTO setbilder (release_id, extern_id, symbol_url, symbol_datei, symbol_mono, logo_url, logo_datei, geprueft) "

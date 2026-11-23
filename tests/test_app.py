@@ -1,5 +1,6 @@
 import json
 import os
+import urllib.error
 import xml.dom.minidom
 
 import pytest
@@ -592,6 +593,7 @@ def test_verknuepfen_legt_nichts_an(client):
 
 def test_set_symbole_und_logos(client, monkeypatch):
     from app import karten, quellen, setbilder
+    tcgdex_echt = setbilder._tcgdex
     magic = next(r for r in client.get("/api/releases?spiele=magic").json() if r["name"] == "Star Trek")["id"]
     with db.verbindung() as con:
         con.execute("INSERT INTO quellen_stand (extern_id, release_id, datum, name, gesehen) VALUES ('scryfall:trk', ?, '2026-11-20', 'Star Trek', 'x')", (magic,))
@@ -615,6 +617,26 @@ def test_set_symbole_und_logos(client, monkeypatch):
     # Zweiter Lauf lädt nichts erneut
     setbilder.abgleichen()
     assert len(abrufe) == 1
+
+    # Pokémon: deutsches Logo fehlt als WebP -> PNG, sonst englisch; auch für bereits einmal gescheiterte Sets
+    rid = db.anlegen({"spiel": "pokemon", "name": "Pitch Black", "datum": "2026-07-17"})
+    with db.verbindung() as con:
+        con.execute("INSERT INTO quellen_stand (extern_id, release_id, datum, name, gesehen) VALUES ('tcgdex:me05', ?, '2026-07-17', 'Pitch Black', 'x')", (rid,))
+        con.execute("INSERT INTO setbilder (release_id, extern_id, logo_url, geprueft) VALUES (?, 'tcgdex:me05', "
+                    "'https://assets.tcgdex.net/de/me/me05/logo.webp', '2099-01-01')", (rid,))
+    monkeypatch.setattr(quellen, "_laden", lambda url: [{"id": "me05", "logo": "https://assets.tcgdex.net/en/me/me05/logo"}]
+                        if "/en/" in url else [{"id": "me05", "logo": "https://assets.tcgdex.net/de/me/me05/logo"}])
+    monkeypatch.setattr(setbilder, "_tcgdex", tcgdex_echt)
+    geladen = []
+    def holen(url):
+        geladen.append(url)
+        if url.endswith("de/me/me05/logo.webp"):
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        return _png()
+    monkeypatch.setattr(karten, "_herunterladen", holen)
+    setbilder.abgleichen()
+    assert geladen[-1] == "https://assets.tcgdex.net/de/me/me05/logo.png"
+    assert client.get(f"/api/releases/{rid}").json()["logo"].startswith("/setbild/")
 
     # SVG mit Skript wird abgelehnt
     monkeypatch.setattr(karten, "_herunterladen", lambda url: b'<svg><script>alert(1)</script></svg>')
@@ -924,3 +946,29 @@ def test_tcgplayer_gruppe_und_ergaenzung(monkeypatch):
     assert karten[0]["tcg_id"] == 7 and karten[0]["tcg_preis"] == 120.0 and karten[0]["bild_url"] == "x"
     assert karten[1]["tcg_id"] == 8 and karten[1]["bild_url"] == "b"
     assert produkte.sealed([{"name": "Delta Reign Half Booster Box", "productId": 9, "extendedData": []}])
+
+
+def test_alle_listen_neu_setzt_nach_neustart_fort(client, monkeypatch):
+    from app import karten, produkte
+    rid = db.anlegen({"spiel": "magic", "name": "Altes Set", "datum": "2025-01-10"})
+
+    def verknuepfen(spiel):
+        with db.verbindung() as con:
+            con.execute("INSERT OR IGNORE INTO quellen_stand (extern_id, release_id, datum, name, gesehen) "
+                        "VALUES ('scryfall:alt', ?, '2025-01-10', 'Altes Set', 'x')", (rid,))
+        return 1
+    abrufe = []
+    monkeypatch.setattr(karten, "sets_verknuepfen", verknuepfen)
+    monkeypatch.setattr(produkte, "tcg_daten", lambda *a: {"sealed": [], "karten": [], "preise": {}})
+    monkeypatch.setattr(karten, "LISTEN", {**karten.LISTEN, "scryfall": lambda k, n, ktx: abrufe.append(k) or [{"nummer": "1", "name": "Eins"}]})
+    client.put("/api/admin/karten/magic", json={"aktiv": True}, auth=ADMIN, headers=H)
+    karten._abrufen("magic")
+    karten._abrufen("magic")
+    assert abrufe.count("alt") == 1  # ältere Sets werden nicht bei jedem Lauf neu geladen
+    # „Alle Listen neu“ wurde gestartet und durch einen Neustart unterbrochen, bevor das Set dran war
+    karten._stand_setzen("magic", {**karten.stand()["magic"], "neu_seit": "2099-01-01T00:00:00Z", "abgeschlossen": False})
+    karten._abrufen("magic")  # der automatische Lauf nach dem Neustart
+    assert abrufe.count("alt") == 2
+    assert "neu_seit" not in karten.stand()["magic"] and karten.stand()["magic"]["abgeschlossen"]
+    karten._abrufen("magic")
+    assert abrufe.count("alt") == 2

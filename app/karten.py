@@ -489,7 +489,13 @@ def _abrufen_intern(spiel: str, alle: bool) -> str:
     q = QUELLE_JE_SPIEL[spiel]
     status.update(laeuft=True, spiel=spiel, schritt="Sets zuordnen", fertig=0, gesamt=0, meldung=None)
     bisheriger = stand().get(spiel)
-    if not bisheriger:
+    # „Alle Listen neu“ merken: Wird der Lauf durch einen Neustart unterbrochen, geht er danach mit den
+    # noch nicht erneuerten Sets weiter
+    neu_seit = (bisheriger or {}).get("neu_seit")
+    if alle:
+        neu_seit = db.jetzt()
+        _stand_setzen(spiel, {**(bisheriger or {}), "neu_seit": neu_seit, "abgeschlossen": False, "pausiert": False})
+    elif not bisheriger:
         # Erster Abruf: vermerken, damit er nach einem Neustart des Containers automatisch weiterläuft
         _stand_setzen(spiel, {"zeit": None, "meldung": "Erster Abruf läuft", "abgeschlossen": False})
     elif bisheriger.get("pausiert"):
@@ -506,7 +512,9 @@ def _abrufen_intern(spiel: str, alle: bool) -> str:
 
     def faellig(s):
         b = bisher.get(s["release_id"])
-        if alle or not b or b["extern_id"] != s["extern_id"] or s["datum"] >= grenze:
+        if not b or b["extern_id"] != s["extern_id"] or s["datum"] >= grenze:
+            return True
+        if neu_seit and (b["abgerufen"] or "") < neu_seit:
             return True
         return (b["anzahl"] == 0 or b["fehler"]) and s["datum"] >= jahr
 
