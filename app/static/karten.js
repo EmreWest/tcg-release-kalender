@@ -27,12 +27,13 @@ function kopfRendern() {
     <section class="flaeche karten-kopf" style="--c:${farbe(r.spiel_farbe)}">
       <div class="detail-band"></div>
       <div class="karten-kopf-inhalt">
+        ${r.logo ? `<img class="set-logo kopf-logo" src="${esc(r.logo)}" alt="">` : ""}
         <div class="detail-spiel"><i></i><span>${esc(r.spiel_name)}</span></div>
-        <h2>${esc(r.name)}</h2>
+        <h2>${r.symbol ? `<img class="set-symbol titel${r.symbol_mono ? " mono" : ""}" src="${esc(r.symbol)}" alt="">` : ""}${esc(r.name)}</h2>
         <div class="karten-meta">
           <span>${esc(datumText(r))}</span>
           ${r.code ? `<span class="code">${esc(r.code)}</span>` : ""}
-          <span>${k.length.toLocaleString("de-DE")} Karten</span>
+          <span>${k.length.toLocaleString("de-DE")} ${k.length === 1 ? "Karte" : "Karten"}</span>
           ${mitBild < k.length ? `<span>${mitBild.toLocaleString("de-DE")} mit Bild</span>` : ""}
         </div>
       </div>

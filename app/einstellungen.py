@@ -53,6 +53,8 @@ def standard() -> dict:
         "quellen_aktiv": None,
         # Spiele, für die Kartenlisten mit Bildern freigeschaltet sind (Standard: keine)
         "karten_spiele": [],
+        # Set-Symbole und -Logos aus den Datenquellen laden und anzeigen
+        "set_bilder": True,
     }
 
 
@@ -111,6 +113,8 @@ def aendern(daten: dict) -> dict:
         if q is not None and (not isinstance(q, list) or not all(isinstance(x, str) for x in q)):
             raise ValueError("quellen_aktiv muss eine Liste sein")
         neu["quellen_aktiv"] = q
+    if "set_bilder" in daten:
+        neu["set_bilder"] = bool(daten["set_bilder"])
     if "karten_spiele" in daten:
         k = daten["karten_spiele"]
         if not isinstance(k, list) or not all(isinstance(x, str) for x in k):

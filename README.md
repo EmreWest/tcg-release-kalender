@@ -9,7 +9,8 @@ Besucher filtern nach Spielen, Status und Produkttyp und abonnieren genau diese 
 - Liste, Monats- und Wochenansicht. Jedes Spiel hat eine eigene Farbe, ein Klick auf einen Termin zeigt alle Details.
 - Die Leiste mit den Ansichten bleibt beim Scrollen oben stehen; „Heute“ (oder Taste T) springt in jeder Ansicht zum heutigen Datum.
 - Archiv mit allen vergangenen Releases, nach Jahr und Monat gruppiert und mit denselben Filtern durchsuchbar. Beim ersten Start werden einmalig die bisherigen Sets aller Spiele abgerufen (rund 1.900 Einträge seit 1993) und bleiben dauerhaft gespeichert.
-- Optional Kartenlisten mit Bildern je Set, pro Spiel in der Verwaltung freischaltbar. Daten und Bilder werden einmal abgerufen und lokal gespeichert.
+- Set-Symbole und Logos (Magic, Pokémon, Yu-Gi-Oh!, Flesh and Blood) in Liste, Archiv, Detailansicht und Kartenlisten – einmal geladen und lokal gespeichert.
+- Optional Kartenlisten mit Bildern je Set, pro Spiel in der Verwaltung freischaltbar, mit eigener Übersicht aller Sets (`/karten`). Daten und Bilder werden einmal abgerufen und lokal gespeichert.
 - Eigene Logos je Spiel: In der Verwaltung hochladen, sie erscheinen in den Filtern, an den Terminen und in der Detailansicht.
 - Kalender-Abo (`webcal://`) mit den gewählten Filtern; einzelne Termine lassen sich auch als `.ics`-Datei speichern.
 - Helles und dunkles Design (folgt standardmäßig der Systemeinstellung, umschaltbar).
@@ -289,6 +290,7 @@ Ablauf:
 1. Spiel freischalten (Haken setzen).
 2. „Daten abrufen“ klicken. Der Container ordnet die Sets im Kalender ihren Sets in der Datenquelle zu, lädt die Kartenlisten und danach alle Bilder. Der Fortschritt steht in der Verwaltung, ein Abruf lässt sich abbrechen und später fortsetzen.
 3. Danach hat jedes Set mit Kartenliste in der Detailansicht einen Knopf „Kartenliste“ (Seite `/karten/{id}`) und in Liste und Archiv einen kleinen Hinweis. Die Kartenseite bietet Suche, Filter nach Seltenheit und eine Großansicht mit Blättern (Pfeiltasten oder Wischen).
+4. Oben auf der Seite erscheint der Knopf „Kartenlisten“. Er führt zur Übersicht aller Sets mit Kartenliste (`/karten`), filterbar nach Spiel und durchsuchbar – unabhängig vom Kalender.
 
 Speicherung und Aktualisierung:
 
@@ -316,6 +318,19 @@ Hinweise:
 - Ein Set bekommt nur dann eine Kartenliste, wenn es einem Set in der Quelle zugeordnet werden kann (gleicher Name oder Set-Code). Manuell angelegte Termine mit abweichendem Namen bleiben ohne Liste.
 - Bei manchen Herstellern sind die Bilder Pressebilder mit „SAMPLE“-Aufdruck (z. B. One Piece, Dragon Ball Super, Gundam aus dem TCGplayer-Katalog).
 - Die Kartenbilder sind urheberrechtlich geschützt. Prüfe vor dem Freischalten, ob die Nutzung auf deiner Seite zulässig ist.
+
+## Set-Symbole und Logos
+
+Standardmäßig an (abschaltbar unter Verwaltung → Darstellung). Kurz nach dem Start und danach täglich holt der Container, was die Datenquellen anbieten:
+
+| Spiel | Was | Quelle |
+|---|---|---|
+| Magic: The Gathering | Set-Symbol (SVG, im dunklen Design hell dargestellt) | Scryfall |
+| Pokémon | Set-Logo, Set-Symbol sofern TCGdex es bereitstellt | TCGdex |
+| Yu-Gi-Oh! | Produktbild des Sets | YGOPRODeck |
+| Flesh and Blood | Set-Logo, wo vorhanden | The FaB Cube |
+
+Für die übrigen Spiele liefern die Quellen keine Symbole. Die Dateien liegen unter `data/setbilder` (insgesamt nur wenige MB), werden nur einmal geladen und ausschließlich von deinem Server ausgeliefert. Symbole stehen vor dem Set-Namen, Logos rechts im Eintrag, in der Detailansicht und auf den Kartenseiten. Zusätzlich nötig ist ausgehender Zugriff auf `svgs.scryfall.io` und `dhhim4ltzu1pj.cloudfront.net`.
 
 ## Automatische Recherche mit Claude (optional)
 
@@ -403,6 +418,7 @@ Alle öffentlichen Endpunkte liefern JSON bzw. Kalender- oder Feed-Dateien und b
 | `GET /api/releases/{id}` | ein Termin (mit `karten`, wenn eine Kartenliste freigeschaltet ist) |
 | `GET /api/karten/{id}` | Kartenliste eines Termins (nur für freigeschaltete Spiele) |
 | `GET /karten/{id}` | Kartenseite eines Sets |
+| `GET /karten`, `GET /api/kartenlisten` | Übersicht aller Sets mit Kartenliste |
 | `GET /api/aenderungen` | Änderungsprotokoll; Parameter `spiele`, `limit` |
 | `GET /kalender.ics` | Kalender-Abo (Parameter siehe oben) |
 | `GET /release/{id}.ics` | ein einzelner Termin als Kalenderdatei |
@@ -417,7 +433,7 @@ Schreibende Verwaltungs-Endpunkte unter `/api/admin/` erwarten Benutzer und Pass
 
 ## Datensicherung
 
-Es reicht, den Ordner `data` zu sichern (Datenbank, Logos und Kartenbilder unter `data/karten`; die Bilder lassen sich notfalls auch neu abrufen). Alternativ unter System → „Alle Daten als JSON herunterladen“.
+Es reicht, den Ordner `data` zu sichern (Datenbank, Logos, Kartenbilder unter `data/karten` und Set-Symbole unter `data/setbilder`; die Bilder lassen sich notfalls auch neu abrufen). Alternativ unter System → „Alle Daten als JSON herunterladen“.
 
 ## Entwicklung und Betrieb ohne Docker
 
@@ -440,6 +456,7 @@ Aufbau:
 | `app/atom.py` | Atom-Feed |
 | `app/notify.py` | Discord- und JSON-Webhooks |
 | `app/logos.py` | Hochgeladene Logos prüfen und speichern |
+| `app/setbilder.py` | Set-Symbole und -Logos: Abruf und Speicherung |
 | `app/karten.py` | Kartenlisten und Kartenbilder: Abruf, Speicherung, Aktualisierung |
 | `app/quellen.py` | Abgleich und Historien-Import mit Scryfall, YGOPRODeck, SWU-DB, The FaB Cube, TCGdex und TCGCSV |
 | `app/einstellungen.py` | In der Verwaltung änderbare Einstellungen |

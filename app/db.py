@@ -125,6 +125,16 @@ CREATE TABLE IF NOT EXISTS kartenbilder (
     versucht TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_kartenbilder_spiel ON kartenbilder(spiel, datei);
+CREATE TABLE IF NOT EXISTS setbilder (
+    release_id INTEGER PRIMARY KEY,
+    extern_id TEXT NOT NULL,
+    symbol_url TEXT,
+    symbol_datei TEXT,
+    symbol_mono INTEGER NOT NULL DEFAULT 0,
+    logo_url TEXT,
+    logo_datei TEXT,
+    geprueft TEXT
+);
 CREATE TABLE IF NOT EXISTS meta (
     schluessel TEXT PRIMARY KEY,
     wert TEXT
@@ -472,6 +482,7 @@ def loeschen(rid: int):
         con.execute("DELETE FROM releases WHERE id = ?", (rid,))
         con.execute("DELETE FROM karten WHERE release_id = ?", (rid,))
         con.execute("DELETE FROM kartenlisten WHERE release_id = ?", (rid,))
+        con.execute("DELETE FROM setbilder WHERE release_id = ?", (rid,))
     _protokoll("geloescht", alt)
 
 

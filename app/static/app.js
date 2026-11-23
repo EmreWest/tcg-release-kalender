@@ -309,6 +309,11 @@ function pille(e, klasse = "") {
     data-r="${r.id}" title="${esc(titel)}"><span>${e.pre ? "Prerelease: " : ""}${esc(r.name)}</span></button>`;
 }
 
+function setSymbol(r, klasse = "") {
+  if (!r.symbol) return "";
+  return `<img class="set-symbol${r.symbol_mono ? " mono" : ""} ${klasse}" src="${esc(r.symbol)}" alt="" loading="lazy" decoding="async">`;
+}
+
 function karte(e) {
   const r = e.r, d = parse(e.tag);
   const ca = !e.pre && zeitraum(r);
@@ -319,18 +324,21 @@ function karte(e) {
   if (!e.pre && r.prerelease) meta.push(`<span>Prerelease ${fmt(r.prerelease)}</span>`);
   if (e.pre) meta.push(`<span>Release ${fmt(r.datum)}</span>`);
   if (r.vorheriges_datum && r.status === "verschoben") meta.push(`<span>vorher ${fmt(r.vorheriges_datum)}</span>`);
-  if (!e.pre && r.karten) meta.push(`<span class="karten-hinweis">${KARTEN_ICON}${r.karten.toLocaleString("de-DE")} Karten</span>`);
+  if (!e.pre && r.karten) meta.push(`<span class="karten-hinweis">${KARTEN_ICON}${r.karten.toLocaleString("de-DE")} ${r.karten === 1 ? "Karte" : "Karten"}</span>`);
   const n = ca ? 99 : tageBis(e.tag);
   return `<button type="button" class="eintrag${r.status_effektiv === "erschienen" && !e.pre ? " vergangen" : ""}" style="--c:${farbe(r.spiel_farbe)}" data-r="${r.id}">
     ${datum}
     <div>
       <div class="titelzeile"><span class="spiel">${logo(r.spiel, "logo-titel")}${esc(r.spiel_name)}</span>
         <span class="badge ${r.status_effektiv}">${esc(META.status[r.status_effektiv])}</span>${markierung(r)}</div>
-      <div class="setzeile"><span class="name">${e.pre ? "Prerelease: " : ""}${esc(r.name)}</span>${r.code ? `<span class="code">${esc(r.code)}</span>` : ""}</div>
+      <div class="setzeile"><span class="name">${setSymbol(r)}${e.pre ? "Prerelease: " : ""}${esc(r.name)}</span>${r.code ? `<span class="code">${esc(r.code)}</span>` : ""}</div>
       <div class="meta">${meta.join("")}</div>
       ${r.notiz && !e.pre ? `<div class="notiz">${esc(r.notiz)}</div>` : ""}
     </div>
-    <div class="countdown${n >= 0 && n <= 7 ? " bald" : ""}">${ca ? "" : countdown(e.tag)}</div>
+    <div class="eintrag-rechts">
+      <div class="countdown${n >= 0 && n <= 7 ? " bald" : ""}">${ca ? "" : countdown(e.tag)}</div>
+      ${r.logo ? `<img class="set-logo eintrag-logo" src="${esc(r.logo)}" alt="" loading="lazy" decoding="async">` : ""}
+    </div>
   </button>`;
 }
 
@@ -516,7 +524,7 @@ async function archivRendern() {
     html += `<button type="button" class="archiv-zeile" style="--c:${farbe(r.spiel_farbe)}" data-r="${r.id}">
       <span class="archiv-datum">${datum}</span>
       <span class="archiv-spiel">${logo(r.spiel, "logo-mini")}${esc(r.spiel_name)}</span>
-      <span class="archiv-name">${esc(r.name)}${r.code ? ` <span class="code">${esc(r.code)}</span>` : ""}${r.karten
+      <span class="archiv-name">${setSymbol(r)}${esc(r.name)}${r.code ? ` <span class="code">${esc(r.code)}</span>` : ""}${r.karten
         ? `<span class="archiv-karten" title="Kartenliste mit ${r.karten} Karten">${KARTEN_ICON}</span>` : ""}</span>
       <span class="archiv-typ">${esc(META.typen[r.typ] || r.typ)}</span>
     </button>`;
@@ -620,7 +628,8 @@ async function detailZeigen(id) {
       <button type="button" class="icon-knopf schliessen-x" data-schliessen aria-label="Schließen">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       <div class="detail-spiel">${logo(r.spiel, "logo-detail") || "<i></i>"}<span>${esc(r.spiel_name)}</span></div>
-      <h2 id="detail-titel">${esc(r.name)}</h2>
+      ${r.logo ? `<img class="set-logo detail-logo" src="${esc(r.logo)}" alt="">` : ""}
+      <h2 id="detail-titel">${setSymbol(r, "titel")}${esc(r.name)}</h2>
       <div class="detail-datum"><b>${esc(datumText)}</b>${ca ? "" : `<span class="countdown${n >= 0 && n <= 7 ? " bald" : ""}">${countdown(r.datum)}</span>`}</div>
       <table class="detail-tabelle">${zeilen.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join("")}</table>
       ${r.notiz ? `<p class="detail-notiz">${esc(r.notiz)}</p>` : ""}

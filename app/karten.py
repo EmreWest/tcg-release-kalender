@@ -41,6 +41,8 @@ ERLAUBTE_HOSTS = {
     "cards.scryfall.io", "images.ygoprodeck.com", "cdn.swu-db.com", "assets.tcgdex.net",
     "tcgplayer-cdn.tcgplayer.com", "legendstory-production-s3-public.s3.amazonaws.com",
     "storage.googleapis.com", "d2wlb52bya4y8z.cloudfront.net",
+    # Set-Symbole und -Logos
+    "svgs.scryfall.io", "dhhim4ltzu1pj.cloudfront.net",
 }
 # Mindestabstand je Server in Sekunden; YGOPRODeck bittet ausdrücklich um Zurückhaltung
 HOST_PAUSE = {"images.ygoprodeck.com": 0.25}
@@ -631,9 +633,10 @@ def liste(rid: int) -> dict | None:
             "SELECT k.nummer, k.name, k.seltenheit, k.art, k.variante, b.datei FROM karten k "
             "LEFT JOIN kartenbilder b ON b.url = k.bild_url WHERE k.release_id = ? ORDER BY k.pos", (rid,)).fetchall()
     q = QUELLE_JE_SPIEL[r["spiel"]]
+    from . import setbilder
     return {
-        "release": {k: r[k] for k in ("id", "spiel", "spiel_name", "spiel_farbe", "name", "code", "typ", "datum",
-                                      "genauigkeit", "status_effektiv")},
+        "release": {**{k: r[k] for k in ("id", "spiel", "spiel_name", "spiel_farbe", "name", "code", "typ", "datum",
+                                         "genauigkeit", "status_effektiv")}, **setbilder.zuordnung().get(rid, {})},
         "quelle": {"name": QUELLEN_NAMEN[q], "url": QUELLEN_LINKS[q]},
         "abgerufen": kl["abgerufen"],
         "karten": [{"nummer": k["nummer"], "name": k["name"], "seltenheit": k["seltenheit"], "art": k["art"],

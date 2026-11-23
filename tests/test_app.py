@@ -582,3 +582,54 @@ def test_verknuepfen_legt_nichts_an(client):
     assert quellen.verknuepfen(sets) == 1
     assert quellen.verknuepfen(sets) == 0
     assert len(db.releases(von="1900-01-01")) == vorher
+
+
+def test_set_symbole_und_logos(client, monkeypatch):
+    from app import karten, quellen, setbilder
+    magic = next(r for r in client.get("/api/releases?spiele=magic").json() if r["name"] == "Star Trek")["id"]
+    with db.verbindung() as con:
+        con.execute("INSERT INTO quellen_stand (extern_id, release_id, datum, name, gesehen) VALUES ('scryfall:trk', ?, '2026-11-20', 'Star Trek', 'x')", (magic,))
+    monkeypatch.setattr(setbilder, "_verknuepfen", lambda: None)
+    monkeypatch.setattr(setbilder, "_scryfall", lambda: {"scryfall:trk": {"symbol": "https://svgs.scryfall.io/sets/trk.svg", "mono": True}})
+    monkeypatch.setattr(setbilder, "_ygoprodeck", lambda: {})
+    monkeypatch.setattr(setbilder, "_fabcube", lambda: {})
+    monkeypatch.setattr(setbilder, "_tcgdex", lambda v, b: {})
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0h10v10z"/></svg>'
+    abrufe = []
+    monkeypatch.setattr(karten, "_herunterladen", lambda url: abrufe.append(url) or svg)
+    assert "1 Symbole" in setbilder.abgleichen()
+
+    r = client.get(f"/api/releases/{magic}").json()
+    assert r["symbol"].startswith("/setbild/") and r["symbol_mono"] is True
+    antwort = client.get(r["symbol"])
+    assert antwort.status_code == 200 and antwort.headers["content-type"].startswith("image/svg+xml")
+    assert "default-src 'none'" in antwort.headers["content-security-policy"]
+    # Zweiter Lauf lädt nichts erneut
+    setbilder.abgleichen()
+    assert len(abrufe) == 1
+
+    # SVG mit Skript wird abgelehnt
+    monkeypatch.setattr(karten, "_herunterladen", lambda url: b'<svg><script>alert(1)</script></svg>')
+    with pytest.raises(ValueError):
+        setbilder._speichern("https://svgs.scryfall.io/sets/boese.svg", "symbol")
+
+    # Ausschalten blendet aus
+    client.put("/api/admin/einstellungen", json={"set_bilder": False}, auth=ADMIN, headers=H)
+    assert "symbol" not in client.get(f"/api/releases/{magic}").json()
+    assert client.get(r["symbol"]).status_code == 404
+
+
+def test_kartenlisten_uebersicht(client, monkeypatch):
+    from app import karten
+    assert client.get("/api/kartenlisten").json() == {"spiele": [], "sets": []}
+    assert client.get("/karten").status_code == 404
+    assert 'href="/karten"' not in client.get("/").text
+    rid = next(r for r in client.get("/api/releases?spiele=magic").json() if r["name"] == "Star Trek")["id"]
+    _kartenquelle(monkeypatch, rid)
+    client.put("/api/admin/karten/magic", json={"aktiv": True}, auth=ADMIN, headers=H)
+    karten._abrufen("magic")
+    d = client.get("/api/kartenlisten").json()
+    assert [s["id"] for s in d["spiele"]] == ["magic"]
+    assert d["sets"][0]["id"] == rid and d["sets"][0]["karten"] == 3
+    assert client.get("/karten").status_code == 200
+    assert 'href="/karten"' in client.get("/").text

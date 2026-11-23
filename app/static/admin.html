@@ -114,6 +114,15 @@
       </div>
       <p class="hinweis">Optional, für ein eigenes Symbol im Browser-Tab und auf dem Homescreen. Am besten quadratisch, z. B. 512 × 512 Pixel oder SVG. Ohne Favicon wird das Logo verwendet, ohne beides das Standard-Symbol.</p>
     </div>
+    <div class="flaeche karte-innen">
+      <h2>Set-Symbole und Logos</h2>
+      <label class="schalter"><input type="checkbox" id="sb-aktiv"> Set-Symbole und Logos im Kalender und in den Kartenlisten anzeigen</label>
+      <div id="sb-text" class="hinweis" style="font-size:14px"></div>
+      <div class="zeile" style="margin-top:10px">
+        <button class="knopf" id="sb-los" type="button">Jetzt abrufen</button>
+      </div>
+      <p class="hinweis">Quellen: Magic (Symbol, Scryfall), Pokémon (Logo und, wo vorhanden, Symbol, TCGdex), Yu-Gi-Oh! (Produktbild, YGOPRODeck), Flesh and Blood (Logo, wo vorhanden). Für die übrigen Spiele liefern die Quellen keine Symbole. Die Bilder werden einmal geladen, unter <code>/data/setbilder</code> gespeichert und täglich um neue Sets ergänzt.</p>
+    </div>
   </section>
 
   <section id="tab-rechtliches" hidden>
@@ -457,6 +466,8 @@ async function ladeEinstellungen() {
   document.getElementById("auto-modus").innerHTML = Object.entries(EINST.auto_modi)
     .map(([k, v]) => `<option value="${k}" ${k === EINST.auto_uebernahme ? "selected" : ""}>${esc(v)}</option>`).join("");
   document.getElementById("auto-domains").value = EINST.offizielle_domains.join("\n");
+  document.getElementById("sb-aktiv").checked = EINST.set_bilder;
+  ladeSetbilder();
   document.getElementById("re-impressum").value = EINST.impressum;
   document.getElementById("re-datenschutz").value = EINST.datenschutz;
   rechtWarnung();
@@ -581,6 +592,26 @@ document.getElementById("historie-los").onclick = async () => {
 document.getElementById("pruefen").onclick = async () => {
   const sp = document.getElementById("pruef-spiel").value;
   try { await api("/api/admin/pruefen" + (sp ? "?spiel=" + sp : ""), { method: "POST" }); toast("Recherche gestartet"); setTimeout(ladeStatus, 500); }
+  catch (e) { toast(e.message); }
+};
+
+// --- Set-Symbole --------------------------------------------------------------------
+async function ladeSetbilder() {
+  const s = await api("/api/admin/setbilder");
+  document.getElementById("sb-text").innerHTML = !s.aktiv ? "Ausgeschaltet."
+    : (s.laeuft ? "<strong>Wird abgerufen …</strong>"
+      : `${s.symbole} Symbole und ${s.logos} Logos gespeichert` + (s.stand ? ` · zuletzt ${new Date(s.stand.zeit).toLocaleString("de-DE")}` : " · der erste Abruf startet kurz nach dem Start des Containers"));
+  document.getElementById("sb-los").disabled = !s.aktiv || s.laeuft;
+  clearTimeout(ladeSetbilder.t);
+  if (s.laeuft) ladeSetbilder.t = setTimeout(ladeSetbilder, 3000);
+}
+document.getElementById("sb-aktiv").onchange = async (e) => {
+  try { await api("/api/admin/einstellungen", { method: "PUT", body: JSON.stringify({ set_bilder: e.target.checked }) });
+    toast("Gespeichert"); ladeSetbilder(); }
+  catch (err) { toast(err.message); }
+};
+document.getElementById("sb-los").onclick = async () => {
+  try { const r = await api("/api/admin/setbilder", { method: "POST" }); toast(r.gestartet ? "Abruf gestartet" : r.meldung); setTimeout(ladeSetbilder, 400); }
   catch (e) { toast(e.message); }
 };
 

@@ -21,14 +21,18 @@
       </div>
     </a>
     <div class="kopf-rechts">
+      {{KARTENLISTEN_LINK}}
       <button class="icon-knopf" id="design-knopf" type="button"></button>
     </div>
   </header>
 
-  <a class="zurueck-link" id="zurueck" href="/">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-    Zurück zum Kalender
-  </a>
+  <div class="zurueck-zeile">
+    <a class="zurueck-link" id="zurueck" href="/">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+      Zurück zum Kalender
+    </a>
+    <a class="zurueck-link" href="/karten">Alle Kartenlisten</a>
+  </div>
 
   <main id="karten-seite" aria-live="polite">
     <div class="flaeche leer">Kartenliste wird geladen …</div>

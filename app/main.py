@@ -14,7 +14,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
-from . import atom, checker, db, einstellungen, ics, karten, logos, notify, quellen, rechtliches
+from . import atom, checker, db, einstellungen, ics, karten, logos, notify, quellen, rechtliches, setbilder
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("tcg-kalender")
@@ -49,6 +49,7 @@ async def lifespan(_app: FastAPI):
     checker.starte_hintergrund()
     quellen.starte_hintergrund()
     karten.starte_hintergrund()
+    setbilder.starte_hintergrund()
     yield
 
 
@@ -126,6 +127,7 @@ def _seite(datei: str, extra: dict | None = None, status_code: int = 200) -> Res
         "{{APPLE_ICON}}": apple,
         "{{FUSS}}": "".join(x for x in fuss if x),
         "{{DATENSCHUTZ_URL}}": "/datenschutz" if e["datenschutz"] else "",
+        "{{KARTENLISTEN_LINK}}": _KARTENLISTEN_LINK if karten.freigeschaltet() else "",
         **(extra or {}),
     }
     for k, v in ersetzungen.items():
@@ -133,6 +135,13 @@ def _seite(datei: str, extra: dict | None = None, status_code: int = 200) -> Res
     inhalt = _STATIC_VERWEIS.sub(rf"\1?v={STATIC_VERSION}", inhalt)
     return Response(inhalt, media_type="text/html; charset=utf-8", status_code=status_code,
                     headers={"Cache-Control": "no-cache"})
+
+
+_KARTENLISTEN_LINK = (
+    '<a class="icon-knopf kartenlisten-knopf" href="/karten" title="Kartenlisten">'
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+    'stroke-linejoin="round" aria-hidden="true"><rect x="7" y="3" width="13" height="17" rx="2"/>'
+    '<path d="M4 7v12a2 2 0 0 0 2 2h9"/></svg><span>Kartenlisten</span></a>')
 
 
 def _favicon_datei(e: dict) -> str | None:
@@ -227,12 +236,15 @@ def api_releases(spiele: str | None = None, status: str | None = None, typ: str 
 
 
 def _mit_karten(rows: list[dict]) -> list[dict]:
-    """Ergänzt die Anzahl der Karten, wenn für das Spiel Kartenlisten freigeschaltet sind."""
+    """Ergänzt Set-Symbol und -Logo sowie die Anzahl der Karten, wenn für das Spiel Kartenlisten freigeschaltet sind."""
     anzahl = karten.anzahlen()
-    if anzahl:
+    bilder = setbilder.zuordnung()
+    if anzahl or bilder:
         for r in rows:
             if anzahl.get(r["id"]):
                 r["karten"] = anzahl[r["id"]]
+            if r["id"] in bilder:
+                r.update(bilder[r["id"]])
     return rows
 
 
@@ -257,6 +269,37 @@ def api_karten(rid: int):
     if not daten:
         raise HTTPException(404, "Keine Kartenliste vorhanden")
     return daten
+
+
+@app.get("/api/kartenlisten")
+def api_kartenlisten():
+    """Alle Sets mit Kartenliste (nur freigeschaltete Spiele), neueste zuerst."""
+    anzahl = karten.anzahlen()
+    if not anzahl:
+        return {"spiele": [], "sets": []}
+    felder = ("id", "spiel", "name", "code", "typ", "datum", "genauigkeit")
+    rows = _mit_karten([{k: r[k] for k in felder} for r in db.releases(von="1900-01-01") if r["id"] in anzahl])
+    rows.sort(key=lambda r: r["datum"], reverse=True)
+    im_einsatz = {r["spiel"] for r in rows}
+    spiele = [{**{k: s[k] for k in ("id", "name", "farbe")}, "logo": _logo_url(s["logo"])}
+              for s in db.spiele() if s["id"] in im_einsatz]
+    return {"spiele": spiele, "sets": rows}
+
+
+@app.get("/karten", include_in_schema=False)
+def kartenlisten_seite():
+    return _seite("kartenlisten.html", status_code=200 if karten.freigeschaltet() else 404)
+
+
+@app.get("/setbild/{datei}", include_in_schema=False)
+def set_bild(datei: str):
+    pfad = setbilder.pfad(datei) if setbilder.aktiv() else None
+    if not pfad:
+        raise HTTPException(404, "Nicht gefunden")
+    return FileResponse(pfad, media_type="image/svg+xml" if datei.endswith(".svg") else "image/webp", headers={
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+    })
 
 
 @app.get("/karten/{rid}", include_in_schema=False)
@@ -403,6 +446,21 @@ def admin_abgleich(quelle: str | None = None, _=Depends(admin)):
     if quellen.status["laeuft"] or quellen.status["historie_laeuft"]:
         return {"gestartet": False, "meldung": "Abgleich läuft bereits."}
     threading.Thread(target=quellen.abgleichen, args=(quelle,), daemon=True).start()
+    return {"gestartet": True}
+
+
+@app.get("/api/admin/setbilder")
+def admin_setbilder(_=Depends(admin)):
+    return setbilder.info()
+
+
+@app.post("/api/admin/setbilder")
+def admin_setbilder_abrufen(_=Depends(admin)):
+    if not setbilder.aktiv():
+        raise HTTPException(400, "Set-Symbole sind ausgeschaltet")
+    if setbilder.status["laeuft"]:
+        return {"gestartet": False, "meldung": "Läuft bereits."}
+    threading.Thread(target=setbilder.abgleichen, daemon=True).start()
     return {"gestartet": True}
 
 
